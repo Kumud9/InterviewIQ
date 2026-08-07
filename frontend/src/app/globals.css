@@ -1,0 +1,112 @@
+@import "tailwindcss";
+
+:root {
+  --background: #F6EBDD;       /* Warm light beige */
+  --foreground: #2A211B;       /* Espresso dark brown */
+  --surface: #E9DDCC;          /* Surface sections */
+  --card: #DCCCB6;             /* Paper-bag card background */
+  --card-foreground: #2A211B;
+  --primary: #B85D2F;          /* Terracotta orange accent */
+  --secondary: #9A4C2A;        /* Mahogany secondary accent */
+  --border: #C8B79E;           /* Muted warm border */
+  --headings: #171411;         /* Deep black-brown */
+  --highlight: #C79B5A;        /* Gold Highlight */
+}
+
+@theme {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-secondary: var(--secondary);
+  --color-border: var(--border);
+  --radius-card: 16px;
+}
+
+/* Base resets & typography */
+body {
+  background-color: #F6EBDD;
+  color: #2A211B;
+  font-family: var(--font-sans), serif;
+  overflow-x: hidden;
+  letter-spacing: -0.01em;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  color: #171411;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+/* Simulated Vintage Paper Texture */
+.paper-texture {
+  background-color: #F6EBDD;
+  background-image: radial-gradient(rgba(42, 33, 27, 0.03) 1px, transparent 0),
+                    radial-gradient(rgba(42, 33, 27, 0.02) 1px, transparent 0);
+  background-size: 24px 24px;
+  background-position: 0 0, 12px 12px;
+}
+
+/* Editorial layout elements */
+.editorial-border {
+  border: 1px solid #C8B79E;
+}
+
+.editorial-card {
+  background-color: #DCCCB6;
+  border: 1px solid #C8B79E;
+  box-shadow: 0 12px 28px -8px rgba(42, 33, 27, 0.06);
+  border-radius: 12px;
+}
+
+.editorial-card-hover {
+  transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.editorial-card-hover:hover {
+  transform: translateY(-2px);
+  border-color: #B85D2F;
+  box-shadow: 0 16px 36px -8px rgba(184, 93, 47, 0.12);
+}
+
+/* Warm shadows */
+.warm-shadow {
+  box-shadow: 0 10px 30px -10px rgba(42, 33, 27, 0.08);
+}
+
+.warm-shadow-sm {
+  box-shadow: 0 4px 12px -4px rgba(42, 33, 27, 0.06);
+}
+
+/* Organic circles & decorative widgets */
+.decorative-dot {
+  width: 4px;
+  height: 4px;
+  background-color: #B85D2F;
+  border-radius: 50%;
+}
+
+.organic-circle {
+  position: absolute;
+  border-radius: 50%;
+  background-color: #E9DDCC;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* Custom scrollbar for warm theme */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #F6EBDD;
+}
+::-webkit-scrollbar-thumb {
+  background: #C8B79E;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #B85D2F;
+}
