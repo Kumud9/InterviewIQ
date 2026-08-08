@@ -1,0 +1,36 @@
+# Environment variables
+.env
+.env.*
+!.env.example
+backend/.env
+
+# Python virtual environments
+venv/
+.venv/
+backend/venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+backend/interviewiq.db
+
+# Node
+node_modules/
+frontend/node_modules/
+
+# IDE
+.vscode/
+.idea/
+
+# Build files
+dist/
+build/
+frontend/.next/
+frontend/out/
+frontend/build/
+.next/

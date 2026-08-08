@@ -152,3 +152,14 @@ POST /api/interview
 }
 ```
 
+---
+
+## AI Development
+
+This project was built with AI-assisted development (pair programming with Google Antigravity).
+
+For a detailed review of prompts, templates, and agent logs used during development, please refer to the following documentation files in the repository root:
+- [PROMPTS.md](file:///d:/Interviewer/PROMPTS.md) — Actual prompts used to develop the planner, question generator, personalization filters, fallbacks, and user interface.
+- [AI_USAGE_LOG.md](file:///d:/Interviewer/AI_USAGE_LOG.md) — Comprehensive log of tasks, AI assistance utilized, changes generated, and verification results.
+
+

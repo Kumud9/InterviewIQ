@@ -1,5 +1,6 @@
 import json
 import os
+import logging
 from app.core.config import settings
 from typing import Any, List, Dict
 from fastapi import APIRouter, Depends, HTTPException
@@ -8,6 +9,8 @@ from app.api import deps
 from app.core.database import get_db
 from app.db import models, schemas
 from app.agents.engine import agent_engine
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -570,24 +573,39 @@ def handle_unified_interview_endpoint(
                 )
                 reply_text = q_data["reply"]
                 topic_name = q_data["topic"]
-            except Exception:
-                api_key_set = False
-                
-        if not api_key_set:
-            reply_text = f"Let's begin your technical interview with Day 7, '{d_obj['title']}'. Based on your experience with {', '.join(d_obj.get('tools', []))}, can you explain: {d_obj['objectives'][0]}?"
-            topic_name = d_obj["title"]
+                source_meta = "gemini"
+            except Exception as e:
+                logger.error(f"Gemini failed to generate Q1: {e}")
+                return {
+                    "reply": f"Error: Gemini question generation failed: {str(e)}",
+                    "done": False,
+                    "status": "generation_error",
+                    "source": "gemini",
+                    "retryable": True
+                }
+        else:
+            return {
+                "reply": "Error: GEMINI_API_KEY is not configured.",
+                "done": False,
+                "status": "generation_error",
+                "source": "gemini",
+                "retryable": False
+            }
             
         state["active_question"] = {
             "content": reply_text,
             "topic": topic_name,
             "day": 7,
-            "is_followup": False
+            "is_followup": False,
+            "source": source_meta
         }
         state["current_question_index"] = 1
         
         return {
             "reply": reply_text,
-            "done": False
+            "done": False,
+            "status": "success",
+            "source": "gemini"
         }
         
     # Process turn response -> Evaluate answer
@@ -600,36 +618,32 @@ def handle_unified_interview_endpoint(
                 user_msg,
                 active_q["topic"]
             )
-        except Exception:
-            evaluation = agent_engine.evaluate_answer_simulation(
-                active_q["content"],
-                user_msg,
-                active_q["topic"]
-            )
+        except Exception as e:
+            logger.error(f"Gemini answer evaluation failed: {e}")
+            return {
+                "reply": f"Error: Gemini answer evaluation failed: {str(e)}",
+                "done": False,
+                "status": "generation_error",
+                "source": "gemini",
+                "retryable": True
+            }
     else:
-        evaluation = agent_engine.evaluate_answer_simulation(
-            active_q["content"],
-            user_msg,
-            active_q["topic"]
-        )
+        return {
+            "reply": "Error: GEMINI_API_KEY is not configured.",
+            "done": False,
+            "status": "generation_error",
+            "source": "gemini",
+            "retryable": False
+        }
         
-    state["history"].append({
+    # Build temporary history with the current turn included to pass to next question planner
+    temp_history = list(state["history"]) + [{
         "question": active_q,
         "answer": {"content": user_msg},
         "evaluation": evaluation
-    })
+    }]
     
-    # We want exactly 8 questions.
-    # Questions map:
-    # Q1: Day 7 (index 1)
-    # Q2: Follow-up to Q1 (index 2)
-    # Q3: Day 8 (index 3)
-    # Q4: Follow-up to Q3 (index 4)
-    # Q5: Day 12 (index 5)
-    # Q6: Day 16 (index 6)
-    # Q7: Day 22 (index 7)
-    # Q8: Day 23 (index 8)
-    
+    # Check if we should end the interview
     if current_idx < 8:
         next_idx = current_idx + 1 # Turn index we are about to ask
         
@@ -660,7 +674,7 @@ def handle_unified_interview_endpoint(
             try:
                 q_data = agent_engine.generate_question_gemini(
                     candidate=candidate,
-                    history=state["history"],
+                    history=temp_history,
                     next_day=target_day,
                     next_day_title=d_obj["title"],
                     next_day_objectives=d_obj["objectives"],
@@ -669,60 +683,67 @@ def handle_unified_interview_endpoint(
                 )
                 reply_text = q_data["reply"]
                 topic_name = q_data["topic"]
-            except Exception:
-                # Fallback template
-                api_key_set = False
-                
-        if not api_key_set:
-            # Fallback custom template generator
-            topic_name = d_obj["title"]
-            if is_next_followup:
-                topic_name = "Follow-up"
-                if target_day == 7:
-                    # Q2 Follow-up to Q1
-                    if "dimension" in user_msg.lower() or "vector" in user_msg.lower() or "similarity" in user_msg.lower():
-                        reply_text = f"You mentioned vectors and similarity metrics in your explanation of '{d_obj['title']}'. When deploying a large-scale collection, how does vector search latency scale with dimension size, and what indices help optimize this?"
-                    else:
-                        reply_text = f"You discussed embeddings. Can you explain the difference in accuracy and speed between using a bi-encoder vs a cross-encoder model to compute semantic similarity?"
-                else:
-                    # Q4 Follow-up to Q3 (Day 8)
-                    if "rag" in user_msg.lower() or "retrieval" in user_msg.lower():
-                        reply_text = f"You highlighted the retrieval aspect of '{d_obj['title']}'. If the retrieved context contains too much noise or is irrelevant, how would you tune chunk size, overlap, or re-ranking steps?"
-                    else:
-                        reply_text = f"You discussed vector storage. How does index quantization (like scalar quantization) help with memory capacity, and what are the trade-offs on search accuracy?"
-            else:
-                reply_text = f"Moving on to Day {target_day}, '{d_obj['title']}'. Focusing on {', '.join(d_obj.get('tools', []))}, can you discuss: {d_obj['objectives'][0]}?"
-                
+                source_meta = "gemini"
+            except Exception as e:
+                logger.error(f"Gemini next question generation failed: {e}")
+                return {
+                    "reply": f"Error: Gemini question generation failed: {str(e)}",
+                    "done": False,
+                    "status": "generation_error",
+                    "source": "gemini",
+                    "retryable": True
+                }
+        else:
+            return {
+                "reply": "Error: GEMINI_API_KEY is not configured.",
+                "done": False,
+                "status": "generation_error",
+                "source": "gemini",
+                "retryable": False
+            }
+            
+        # Commit both turn evaluation and new question state
+        state["history"] = temp_history
         state["active_question"] = {
             "content": reply_text,
             "topic": topic_name,
             "day": target_day,
-            "is_followup": is_next_followup
+            "is_followup": is_next_followup,
+            "source": source_meta
         }
         state["current_question_index"] = next_idx
         
         return {
             "reply": reply_text,
-            "done": False
+            "done": False,
+            "status": "success",
+            "source": "gemini"
         }
     else:
         # Compile evaluation report after 8 questions completed
         if api_key_set:
             try:
                 report = agent_engine.generate_final_report_gemini(
-                    state["history"],
+                    temp_history,
                     state["difficulty"]
                 )
-            except Exception:
-                report = agent_engine.generate_final_report_simulation(
-                    state["history"],
-                    state["difficulty"]
-                )
+            except Exception as e:
+                logger.error(f"Gemini final report generation failed: {e}")
+                return {
+                    "reply": f"Error: Gemini feedback compilation failed: {str(e)}",
+                    "done": False,
+                    "status": "generation_error",
+                    "source": "gemini",
+                    "retryable": True
+                }
         else:
-            report = agent_engine.generate_final_report_simulation(
-                state["history"],
-                state["difficulty"]
-            )
+            return {
+                "reply": "Error: GEMINI_API_KEY is not configured.",
+                "done": False,
+                "status": "generation_error",
+                "source": "gemini",
+                "retryable": False
+            }
             
         summary_text = (
             f"Interview complete. The candidate demonstrated an overall score of {report.get('overall_score', 0)}%. "
@@ -730,12 +751,15 @@ def handle_unified_interview_endpoint(
             f"Problem solving: {report.get('problem_solving', 0)}%, Communication: {report.get('communication', 0)}%."
         )
         
-        # Clean up session state
+        # Commit final state and clean up session
+        state["history"] = temp_history
         SESSION_STATE.pop(session_id, None)
         
         return {
             "reply": "Interview completed.",
             "done": True,
+            "status": "success",
+            "source": "gemini",
             "feedback": {
                 "summary": summary_text,
                 "strengths": report.get("strengths", []),

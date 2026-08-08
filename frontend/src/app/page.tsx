@@ -5,76 +5,72 @@ import Link from "next/link";
 import { 
   Brain, Target, BookOpen, Cpu, TrendingUp, FileText, 
   Database, Network, ArrowRight, Star, Play, Check, 
-  Menu, X, Sparkles, MessageSquare, Terminal, Shield, Zap
+  Menu, X, Sparkles, MessageSquare, Terminal, Shield, Zap,
+  UserCheck, Compass, HelpCircle, FileCode, CheckCircle2
 } from "lucide-react";
 
 export default function LandingPage() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [chatMessageIndex, setChatMessageIndex] = useState(0);
-  const [chatHistory, setChatHistory] = useState<Array<{ sender: "ai" | "user"; text: string }>>([]);
-  const [activeStep, setActiveStep] = useState(0);
+  const [activeHeroStep, setActiveHeroStep] = useState(0);
+  const [activeWorkflowStep, setActiveWorkflowStep] = useState(0);
 
-  const interviewSimulation = [
-    { sender: "ai" as const, text: "Welcome. Let's start. Explain what Retrieval-Augmented Generation (RAG) is and how it solves LLM hallucination." },
-    { sender: "user" as const, text: "RAG retrieves relevant doc chunks from a vector DB like Qdrant and appends them to the LLM's prompt window. This anchors the LLM's response in factual source text." },
-    { sender: "ai" as const, text: "Excellent answer. Let's dive deeper: when dividing documents into chunks, why is it critical to configure a 'chunk overlap'?" },
-    { sender: "user" as const, text: "Chunk overlap prevents splitting sentence context in half at block boundaries, ensuring semantic coherence is maintained across contiguous chunks." },
-    { sender: "ai" as const, text: "Correct. Now, how would you design a tool server using Model Context Protocol (MCP) to access databases securely?" }
+  const heroSteps = [
+    { label: "Candidate Profile", desc: "Attempts, skipped days, learning signals parsed" },
+    { label: "Curriculum Map", desc: "31-day cohort objectives & topics analyzed" },
+    { label: "Interview Planner", desc: "Generates custom 8+ question sequence strategy" },
+    { label: "Question Generation", desc: "Dynamic question tailored to experience & history" },
+    { label: "Candidate Response", desc: "Candidate submits conceptual or system architecture answer" },
+    { label: "Adaptive Follow-up", desc: "AI probes weaknesses or deepens technical challenges" },
+    { label: "Structured Feedback", desc: "Grades, strengths, gaps & custom learning path compiled" }
   ];
 
-  // Auto typing simulator for hero chat widget
+  // Rotate Hero workflow visualization
   useEffect(() => {
-    setChatHistory([interviewSimulation[0]]);
     const timer = setInterval(() => {
-      setChatMessageIndex((prevIndex) => {
-        const nextIndex = (prevIndex + 1) % interviewSimulation.length;
-        // Rebuild history
-        const newHistory = interviewSimulation.slice(0, nextIndex + 1);
-        setChatHistory(newHistory);
-        return nextIndex;
-      });
-    }, 4500);
+      setActiveHeroStep((prev) => (prev + 1) % heroSteps.length);
+    }, 2800);
     return () => clearInterval(timer);
   }, []);
 
-  // Cycle "How it works" highlight step
+  // Rotate "How it works" interactive steps
   useEffect(() => {
     const timer = setInterval(() => {
-      setActiveStep((prev) => (prev + 1) % 6);
-    }, 3000);
+      setActiveWorkflowStep((prev) => (prev + 1) % 7);
+    }, 3200);
     return () => clearInterval(timer);
   }, []);
 
   const features = [
-    { icon: <Brain className="w-6 h-6 text-[#B85D2F]" />, title: "Adaptive Interview Engine", description: "Dynamically changes difficulty curve based on your conceptual precision." },
-    { icon: <Target className="w-6 h-6 text-[#9A4C2A]" />, title: "Personalized Questions", description: "Targets specific engineering stacks instead of presenting generic algorithmic puzzles." },
-    { icon: <BookOpen className="w-6 h-6 text-[#B85D2F]" />, title: "Curriculum Aware", description: "Directly syncs with course modules, testing actual week-over-week progress." },
-    { icon: <Cpu className="w-6 h-6 text-[#9A4C2A]" />, title: "AI Follow-ups", description: "Never scripted. Probes candidate answers with deep, context-driven questions." },
-    { icon: <TrendingUp className="w-6 h-6 text-[#B85D2F]" />, title: "Performance Analytics", description: "Beautiful radar diagrams mapping technical depth, communication, and speed." },
-    { icon: <FileText className="w-6 h-6 text-[#9A4C2A]" />, title: "Detailed Feedback Reports", description: "Provides line-by-line feedback, strengths, weak areas, and exact reference answers." },
-    { icon: <Database className="w-6 h-6 text-[#B85D2F]" />, title: "RAG Powered", description: "Queries live documentation repositories to match answers against current specifications." },
-    { icon: <Network className="w-6 h-6 text-[#9A4C2A]" />, title: "Multi-Agent Architecture", description: "Planner, Evaluator, Retriever, and Reporter agents collaborate to evaluate candidates." }
+    { icon: <Brain className="w-5 h-5 text-[#B85D2F]" />, title: "Adaptive Interview Engine", description: "Dynamically shifts difficulty curves in response to candidate reasoning precision." },
+    { icon: <Target className="w-5 h-5 text-[#B85D2F]" />, title: "Personalized Strategy", description: "Adapts focus based on completed milestones, skipped tasks, and historical failures." },
+    { icon: <BookOpen className="w-5 h-5 text-[#B85D2F]" />, title: "Curriculum Aware", description: "Directly mapped to cohort modules to test practical, week-by-week progress." },
+    { icon: <Cpu className="w-5 h-5 text-[#B85D2F]" />, title: "Dynamic Follow-ups", description: "Never scripted. AI analyzes response depth to probe underlying conceptual gaps." },
+    { icon: <TrendingUp className="w-5 h-5 text-[#B85D2F]" />, title: "Performance Diagnostics", description: "Clean assessment indicators evaluating technical accuracy, depth, and communication." },
+    { icon: <FileText className="w-5 h-5 text-[#B85D2F]" />, title: "Structured Feedback", description: "Generates explicit strengths, weaknesses, and concrete recommendations." },
+    { icon: <Database className="w-5 h-5 text-[#B85D2F]" />, title: "Fact Retrieval", description: "Retrieves facts from system docs to evaluate answers against correct guidelines." },
+    { icon: <Network className="w-5 h-5 text-[#B85D2F]" />, title: "Multi-Agent Graph", description: "Coordination between Planner, Evaluator, and Reporter agents ensures high quality." }
   ];
 
-  const steps = [
-    { title: "Upload Profile", desc: "Sync resume or curriculum" },
-    { title: "Generate Strategy", desc: "Multi-agent planning" },
-    { title: "Live Technical Test", desc: "Adaptive 8-question stream" },
-    { title: "Context Follow-ups", desc: "Deep concept validation" },
-    { title: "AI Evaluation", desc: "Keyword & semantic rating" },
-    { title: "Feedback Report", desc: "Custom learning path generated" }
+  const workflowSteps = [
+    { title: "Candidate Profile", desc: "Assess completed missions, attempts, and learning signals." },
+    { title: "Learning Journey", desc: "Identify focus topics and trace historical milestone context." },
+    { title: "AI Interview Planner", desc: "Construct a customized technical coverage strategy (no static question banks)." },
+    { title: "Dynamic Question", desc: "AI generates a targeted question for the current curriculum objective." },
+    { title: "Candidate Answer", desc: "Developer types or speaks their technical architecture response." },
+    { title: "Adaptive Follow-up", desc: "AI probes answer limitations or extends difficulty based on reasoning." },
+    { title: "Final Assessment", desc: "Synthesize turn details into a structured capability feedback scorecard." }
   ];
 
   const pricing = [
     {
-      name: "Free Trial",
+      name: "Standard Practice",
       price: "$0",
-      description: "Perfect for students practicing single interviews.",
+      description: "Perfect for engineers testing the simulator.",
       features: [
-        "1 full adaptive interview session",
-        "Basic performance score dashboard",
-        "Conceptual & scenario-based questions",
-        "SQLite local history",
+        "1 complete adaptive technical interview",
+        "Curriculum objectives coverage",
+        "Turn-by-turn answer evaluation",
+        "Mock final report generation"
       ],
       cta: "Practice Free",
       popular: false
@@ -82,28 +78,26 @@ export default function LandingPage() {
     {
       name: "Developer Pro",
       price: "$19",
-      description: "For engineers preparing for heavy enterprise tech cycles.",
+      description: "For engineers preparing for heavy enterprise tech loops.",
       features: [
-        "Unlimited mock interviews",
-        "Detailed Multi-Agent Feedback Reports",
-        "Advanced MCP tool design modules",
-        "Custom curriculum uploading (JSON)",
-        "Voice speech synthesis enabled",
-        "Interactive radar performance graphs"
+        "Unlimited practice interview sessions",
+        "Dynamic curriculum focus personalization",
+        "Detailed multi-agent evaluation cards",
+        "Interactive radar mastery mapping",
+        "Custom learning path videos & readings"
       ],
-      cta: "Upgrade to Pro",
+      cta: "Start Pro Trial",
       popular: true
     },
     {
       name: "Enterprise Teams",
       price: "$99",
-      description: "For engineering managers seeking to screen candidates.",
+      description: "For cohort managers grading engineer performance.",
       features: [
-        "Dynamic cohort ranking leaderboard",
-        "Custom assessment creation API",
-        "Dedicated Qdrant index namespaces",
-        "Pre-filtered tenant security access",
-        "Priority support & API integration"
+        "Interactive cohort tracking directories",
+        "Custom curriculum configuration loader",
+        "Advanced MCP tool validation metrics",
+        "Dedicated organizational analytics graphs"
       ],
       cta: "Contact Enterprise",
       popular: false
@@ -111,60 +105,59 @@ export default function LandingPage() {
   ];
 
   return (
-    <div className="relative min-h-screen bg-[#F6EBDD] paper-texture overflow-hidden select-none">
-      {/* Background Aurora Blobs */}
-      <div className="organic-circle aurora-emerald" />
-      <div className="organic-circle aurora-cyan" />
-
-      {/* Navigation */}
-      <header className="sticky top-0 z-50 border-b border-[#C8B79E] bg-[#F6EBDD] paper-texture/80 ">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="p-2 rounded-xl bg-gradient-to-tr from-[#B85D2F] to-[#C79B5A] text-black">
-              <Brain className="w-6 h-6 text-black fill-black/10" />
+    <div className="relative min-h-screen bg-[#F6EBDD] paper-texture text-[#2A211B] flex flex-col font-sans select-none antialiased">
+      
+      {/* Navigation Header */}
+      <header className="sticky top-0 z-50 border-b border-[#C8B79E] bg-[#F6EBDD]/90 backdrop-blur-md">
+        <div className="max-w-7xl mx-auto px-6 sm:px-8 h-20 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-[#E9DDCC] border border-[#C8B79E] text-[#B85D2F] shadow-sm">
+              <Brain className="w-6 h-6 stroke-[1.5]" />
             </div>
-            <span className="font-extrabold text-xl tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white via-zinc-200 to-zinc-400">
-              InterviewIQ <span className="text-[#B85D2F]">AI</span>
-            </span>
+            <div className="flex flex-col">
+              <span className="font-extrabold text-base tracking-tight text-[#171411]">
+                InterviewIQ <span className="text-[#B85D2F]">AI</span>
+              </span>
+              <span className="text-[9px] font-mono tracking-widest text-[#75665A]/80 uppercase">Cohort Interviewer</span>
+            </div>
           </div>
 
-          <nav className="hidden md:flex items-center gap-8 text-sm text-[#2A211B]/80 font-medium">
-            <a href="#features" className="hover:text-[#171411] transition">Features</a>
-            <a href="#workflow" className="hover:text-[#171411] transition">Workflow</a>
-            <a href="#architecture" className="hover:text-[#171411] transition">Architecture</a>
-            <a href="#pricing" className="hover:text-[#171411] transition">Pricing</a>
+          {/* Desktop Nav */}
+          <nav className="hidden md:flex items-center gap-10 text-xs font-bold uppercase tracking-wider text-[#75665A]">
+            <a href="#features" className="hover:text-[#B85D2F] transition duration-200">System Features</a>
+            <a href="#workflow" className="hover:text-[#B85D2F] transition duration-200">How It Works</a>
+            <a href="#pricing" className="hover:text-[#B85D2F] transition duration-200">Plans</a>
           </nav>
 
-          <div className="hidden md:flex items-center gap-4">
-            <Link href="/login" className="text-[#2A211B] hover:text-[#171411] text-sm transition">
+          <div className="hidden md:flex items-center gap-5">
+            <Link href="/login" className="text-xs font-bold uppercase tracking-wider text-[#75665A] hover:text-[#171411] transition duration-200">
               Sign In
             </Link>
             <Link 
               href="/login" 
-              className="px-4 py-2 text-sm font-semibold rounded-xl bg-[#B85D2F] hover:bg-[#0ea571] text-black hover:warm-shadow transition-all duration-300"
+              className="px-5 py-3 text-xs font-extrabold uppercase tracking-wider rounded-xl bg-[#B85D2F] hover:bg-[#9A4C2A] text-[#F6EBDD] shadow-sm hover:shadow transition duration-200"
             >
               Start Interview
             </Link>
           </div>
 
           {/* Mobile Menu Button */}
-          <button className="md:hidden text-[#2A211B]/80" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
-            {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+          <button className="md:hidden p-2 rounded-lg hover:bg-[#E9DDCC] transition text-[#2A211B]" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
+            {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
         </div>
 
-        {/* Mobile Navigation Dropdown */}
+        {/* Mobile Dropdown */}
         {mobileMenuOpen && (
-          <div className="md:hidden border-t border-[#C8B79E] bg-[#F6EBDD] paper-texture/95  px-4 py-6 flex flex-col gap-4 text-[#2A211B]">
-            <a href="#features" onClick={() => setMobileMenuOpen(false)}>Features</a>
-            <a href="#workflow" onClick={() => setMobileMenuOpen(false)}>Workflow</a>
-            <a href="#architecture" onClick={() => setMobileMenuOpen(false)}>Architecture</a>
-            <a href="#pricing" onClick={() => setMobileMenuOpen(false)}>Pricing</a>
-            <hr className="border-[#C8B79E] my-2" />
+          <div className="md:hidden border-t border-[#C8B79E] bg-[#F6EBDD] px-6 py-8 flex flex-col gap-6 text-xs font-bold uppercase tracking-wider text-[#75665A]">
+            <a href="#features" onClick={() => setMobileMenuOpen(false)}>System Features</a>
+            <a href="#workflow" onClick={() => setMobileMenuOpen(false)}>How It Works</a>
+            <a href="#pricing" onClick={() => setMobileMenuOpen(false)}>Plans</a>
+            <hr className="border-[#C8B79E]" />
             <Link href="/login" onClick={() => setMobileMenuOpen(false)}>Sign In</Link>
             <Link 
               href="/login" 
-              className="py-2 text-center font-bold rounded-xl bg-[#B85D2F] text-black"
+              className="py-4 text-center rounded-xl bg-[#B85D2F] text-[#F6EBDD]"
               onClick={() => setMobileMenuOpen(false)}
             >
               Start Interview
@@ -174,383 +167,311 @@ export default function LandingPage() {
       </header>
 
       {/* Hero Section */}
-      <section className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-20 pb-24 md:pt-28 md:pb-32 grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
-        <div className="lg:col-span-7 flex flex-col text-left">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-[#B85D2F]/20 bg-[#B85D2F]/5 text-xs text-[#B85D2F] font-semibold w-fit mb-6 animate-pulse">
+      <section className="relative max-w-7xl mx-auto px-6 sm:px-8 pt-20 pb-28 md:pt-28 md:pb-36 grid grid-cols-1 lg:grid-cols-12 gap-12 items-center flex-1">
+        <div className="lg:col-span-6 flex flex-col text-left space-y-8">
+          
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-[#B85D2F]/20 bg-[#B85D2F]/5 text-[10px] uppercase font-bold tracking-widest text-[#B85D2F] w-fit">
             <Sparkles className="w-3.5 h-3.5" />
-            Adaptive Agentic Simulator
+            Adaptive Agentic technical loops
           </div>
           
-          <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight leading-tight text-[#171411] mb-6">
-            Master AI Interviews <br />
-            <span className="bg-clip-text text-transparent bg-gradient-to-r from-[#B85D2F] to-[#9A4C2A]">
-              Before the Real One.
-            </span>
+          <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight leading-[1.08] text-[#171411]">
+            BUILD THE INTERVIEWER.<br />
+            <span className="text-[#B85D2F]">NOT THE INTERVIEW.</span>
           </h1>
 
-          <p className="text-lg text-[#2A211B]/80 max-w-xl mb-8 leading-relaxed">
-            InterviewIQ AI is an adaptive AI interviewer that simulates enterprise technical loops, generating context-driven follow-ups based on your personal AI engineering learning journey.
+          <p className="text-base sm:text-lg text-[#75665A] max-w-xl leading-relaxed">
+            An adaptive technical interviewer that understands a candidate's learning journey, challenges their reasoning, and adapts the conversation in real time.
           </p>
 
-          <div className="flex flex-col sm:flex-row gap-4">
+          <div className="flex flex-col sm:flex-row gap-4 pt-2">
             <Link 
               href="/login"
-              className="px-8 py-4 text-base font-bold rounded-2xl bg-gradient-to-r from-[#B85D2F] to-[#9A4C2A] text-black flex items-center justify-center gap-2 group hover:warm-shadow transition duration-300"
+              className="px-8 py-4.5 rounded-xl bg-[#B85D2F] hover:bg-[#9A4C2A] text-[#F6EBDD] font-extrabold uppercase tracking-wider text-xs flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition duration-200"
             >
-              Start Practice Interview
-              <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+              Start Interview
+              <ArrowRight className="w-4 h-4 stroke-[2]" />
             </Link>
             <a 
               href="#workflow"
-              className="px-8 py-4 text-base font-semibold rounded-2xl border border-[#C8B79E] hover:border-[#C8B79E]/60 bg-white/5 hover:bg-white/10 text-[#171411] flex items-center justify-center gap-2 transition duration-200"
+              className="px-8 py-4.5 rounded-xl border border-[#C8B79E] hover:border-[#B85D2F]/30 bg-white/5 hover:bg-white/10 text-[#2A211B] font-extrabold uppercase tracking-wider text-xs flex items-center justify-center gap-2 transition duration-200"
             >
-              <Play className="w-5 h-5 text-[#9A4C2A] fill-[#06B6D4]/10" />
-              Watch Demo Flow
+              <Play className="w-4 h-4 stroke-[2.5] text-[#B85D2F]" />
+              See How It Works
             </a>
           </div>
 
-          {/* Social Stats Proof */}
-          <div className="mt-12 pt-8 border-t border-[#C8B79E] flex gap-8">
+          <div className="pt-8 border-t border-[#C8B79E] grid grid-cols-3 gap-6 max-w-lg">
             <div>
-              <span className="block text-2xl font-bold text-[#171411]">98.2%</span>
-              <span className="text-xs text-[#2A211B]/60">Evaluation Accuracy</span>
+              <span className="block text-xl font-extrabold text-[#171411]">No Static Pools</span>
+              <span className="text-[10px] text-[#75665A] font-bold uppercase tracking-wider">Dynamic Generation</span>
             </div>
             <div>
-              <span className="block text-2xl font-bold text-[#171411]">1,500+</span>
-              <span className="text-xs text-[#2A211B]/60">Adaptive Questions</span>
+              <span className="block text-xl font-extrabold text-[#171411]">Multi-Agent</span>
+              <span className="text-[10px] text-[#75665A] font-bold uppercase tracking-wider">Interactive planner</span>
             </div>
             <div>
-              <span className="block text-2xl font-bold text-[#171411]">4.9/5</span>
-              <span className="text-xs text-[#2A211B]/60">Candidate Rating</span>
+              <span className="block text-xl font-extrabold text-[#171411]">Curriculum-Aware</span>
+              <span className="text-[10px] text-[#75665A] font-bold uppercase tracking-wider">Real-time Adaptivity</span>
             </div>
           </div>
         </div>
 
-        {/* Hero Interactive Interview Chat Preview */}
-        <div className="lg:col-span-5 relative w-full">
-          <div className="absolute inset-0 bg-gradient-to-tr from-[#10B981]/10 to-[#06B6D4]/10 rounded-[24px] blur-2xl" />
-          
-          <div className="relative rounded-[20px] border border-[#C8B79E] bg-[#DCCCB6]/60  p-5 overflow-hidden shadow-2xl editorial-card">
-            {/* Header Toolbar */}
-            <div className="flex items-center justify-between border-b border-[#C8B79E] pb-3 mb-4">
-              <div className="flex items-center gap-2">
-                <div className="w-2.5 h-2.5 rounded-full bg-red-500/80" />
-                <div className="w-2.5 h-2.5 rounded-full bg-yellow-500/80" />
-                <div className="w-2.5 h-2.5 rounded-full bg-green-500/80" />
-              </div>
-              <div className="text-xs text-[#2A211B]/60 font-mono flex items-center gap-1.5">
-                <Terminal className="w-3.5 h-3.5" />
-                ai_interview_session.sh
-              </div>
-              <div className="px-2 py-0.5 rounded bg-emerald-500/10 text-[10px] text-[#B85D2F] font-bold">
-                LIVE
-              </div>
+        {/* Sophisticated Flow Animation */}
+        <div className="lg:col-span-6 flex flex-col justify-center items-center w-full">
+          <div className="w-full max-w-md p-6 rounded-2xl border border-[#C8B79E] bg-[#E9DDCC]/50 shadow-xl relative overflow-hidden">
+            <div className="flex items-center justify-between border-b border-[#C8B79E] pb-3 mb-6">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-[#75665A] flex items-center gap-2">
+                <Terminal className="w-3.5 h-3.5 text-[#B85D2F]" /> AI Interview Engine Graph
+              </span>
+              <div className="w-2 h-2 rounded-full bg-[#B85D2F] animate-pulse" />
             </div>
 
-            {/* Chat Content Panel */}
-            <div className="space-y-4 min-h-[300px] flex flex-col justify-end text-sm">
-              {chatHistory.map((msg, idx) => (
-                <div 
-                  key={idx} 
-                  className={`flex flex-col max-w-[85%] ${
-                    msg.sender === "user" ? "self-end items-end" : "self-start items-start"
-                  } transition-all duration-500 ease-out`}
-                >
-                  <span className="text-[10px] text-[#2A211B]/60 mb-1 flex items-center gap-1">
-                    {msg.sender === "ai" ? (
-                      <>
-                        <Brain className="w-3 h-3 text-[#B85D2F]" /> AI Interviewer
-                      </>
-                    ) : (
-                      "Candidate"
+            <div className="space-y-3 relative">
+              {heroSteps.map((step, idx) => {
+                const isActive = activeHeroStep === idx;
+                return (
+                  <div key={idx} className="flex flex-col items-center">
+                    <div 
+                      className={`w-full p-3.5 rounded-xl border transition-all duration-500 flex items-center gap-4 ${
+                        isActive 
+                          ? "bg-white border-[#B85D2F] shadow-md scale-[1.03] z-10" 
+                          : "bg-[#DCCCB6]/40 border-[#C8B79E]/60 opacity-50"
+                      }`}
+                    >
+                      <div 
+                        className={`w-6 h-6 rounded-full flex items-center justify-center font-mono text-[10px] font-extrabold transition-all duration-300 ${
+                          isActive ? "bg-[#B85D2F] text-[#F6EBDD]" : "bg-[#C8B79E] text-[#75665A]"
+                        }`}
+                      >
+                        {idx + 1}
+                      </div>
+                      <div className="text-left">
+                        <span className={`block text-xs font-extrabold ${isActive ? "text-[#171411]" : "text-[#75665A]"}`}>
+                          {step.label}
+                        </span>
+                        {isActive && (
+                          <span className="block text-[10px] text-[#75665A] mt-0.5 animate-fadeIn">
+                            {step.desc}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {idx < heroSteps.length - 1 && (
+                      <div className={`w-0.5 h-3 transition-colors duration-500 my-1 ${
+                        isActive ? "bg-[#B85D2F]" : "bg-[#C8B79E]/50"
+                      }`} />
                     )}
-                  </span>
-                  <div 
-                    className={`p-3 rounded-2xl leading-relaxed ${
-                      msg.sender === "user" 
-                        ? "bg-[#B85D2F]/15 text-[#B85D2F] rounded-tr-none border border-[#B85D2F]/20" 
-                        : "bg-white/5 text-[#2A211B] rounded-tl-none border border-[#C8B79E]"
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Workflow: How It Works */}
+      <section id="workflow" className="relative border-t border-[#C8B79E] bg-[#E9DDCC]/30 py-24 sm:py-32">
+        <div className="max-w-7xl mx-auto px-6 sm:px-8">
+          <div className="max-w-3xl mb-20 text-left">
+            <span className="text-[10px] uppercase font-extrabold tracking-widest text-[#B85D2F] block mb-3">Interactive Workflow</span>
+            <h2 className="text-3xl sm:text-4xl font-extrabold text-[#171411] tracking-tight leading-tight">
+              Real-time Generative Loop. <br />No Predefined Question Banks.
+            </h2>
+            <p className="text-sm text-[#75665A] mt-4 leading-relaxed max-w-xl">
+              Unlike static mock tools with predetermined checklists, InterviewIQ coordinates multiple sub-agents to construct, probe, grade, and path every turn dynamically.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            
+            {/* Left selector */}
+            <div className="lg:col-span-5 space-y-3">
+              {workflowSteps.map((step, idx) => {
+                const isActive = activeWorkflowStep === idx;
+                return (
+                  <button
+                    key={idx}
+                    onClick={() => setActiveWorkflowStep(idx)}
+                    className={`w-full p-4 rounded-xl border text-left flex items-start gap-4 transition-all duration-300 ${
+                      isActive 
+                        ? "bg-white border-[#B85D2F] shadow-sm" 
+                        : "bg-[#DCCCB6]/20 border-[#C8B79E] hover:bg-[#DCCCB6]/40"
                     }`}
                   >
-                    {msg.text}
-                  </div>
-                </div>
-              ))}
-              
-              {/* Simulator thinking state indicator */}
-              <div className="flex items-center gap-1.5 self-start text-xs text-[#2A211B]/60 pl-1 py-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#B85D2F] animate-bounce" style={{ animationDelay: '0ms' }} />
-                <span className="w-1.5 h-1.5 rounded-full bg-[#B85D2F] animate-bounce" style={{ animationDelay: '150ms' }} />
-                <span className="w-1.5 h-1.5 rounded-full bg-[#B85D2F] animate-bounce" style={{ animationDelay: '300ms' }} />
-                <span className="text-[10px] text-[#2A211B]/70 ml-1 font-mono">evaluating concepts...</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Features Grid */}
-      <section id="features" className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 border-t border-[#C8B79E]">
-        <div className="text-center max-w-3xl mx-auto mb-16">
-          <span className="text-sm text-[#9A4C2A] font-bold tracking-wider uppercase">Built for Scale</span>
-          <h2 className="text-3xl sm:text-4xl font-extrabold text-[#171411] mt-2">
-            Powerful Multi-Agent Architecture
-          </h2>
-          <p className="text-[#2A211B]/80 mt-4 leading-relaxed">
-            InterviewIQ uses localized agents to deliver a granular, adaptive loop that is curriculum-aware.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {features.map((feat, index) => (
-            <div 
-              key={index} 
-              className="p-6 rounded-[20px] bg-[#DCCCB6]/40 border border-[#C8B79E] hover:border-[#B85D2F]/20 hover:bg-[#DCCCB6]/70 editorial-card-hover group cursor-default"
-            >
-              <div className="p-3 bg-white/5 w-fit rounded-xl mb-4 group-hover:scale-110 group-hover:bg-[#B85D2F]/10 transition duration-300">
-                {feat.icon}
-              </div>
-              <h3 className="text-lg font-bold text-[#171411] mb-2">{feat.title}</h3>
-              <p className="text-sm text-[#2A211B]/80 leading-relaxed">{feat.description}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Interactive How It Works Workflow */}
-      <section id="workflow" className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 border-t border-[#C8B79E] bg-[#F6EBDD] paper-texture/50">
-        <div className="text-center max-w-3xl mx-auto mb-16">
-          <span className="text-sm text-[#B85D2F] font-bold tracking-wider uppercase">Interactive Cycle</span>
-          <h2 className="text-3xl sm:text-4xl font-extrabold text-[#171411] mt-2">
-            Adaptive Loop Generation
-          </h2>
-          <p className="text-[#2A211B]/80 mt-4 leading-relaxed">
-            The platform guides candidates through an adaptive, fully automated interview pipeline from upload to reports.
-          </p>
-        </div>
-
-        {/* Step Cards with Connected Flow Lines */}
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-6 relative">
-          {steps.map((step, idx) => (
-            <div 
-              key={idx}
-              className={`p-5 rounded-[20px] border transition-all duration-500 ${
-                activeStep === idx 
-                  ? "bg-[#B85D2F]/10 border-[#B85D2F]/40 scale-105 shadow-[0_0_20px_rgba(16,185,129,0.1)]" 
-                  : "bg-[#DCCCB6]/40 border-[#C8B79E] opacity-60"
-              }`}
-            >
-              <div className="flex items-center justify-between mb-3">
-                <span className={`text-2xl font-bold font-mono ${activeStep === idx ? "text-[#B85D2F]" : "text-[#2A211B]/70"}`}>
-                  {String(idx + 1).padStart(2, '0')}
-                </span>
-                <div className={`w-2 h-2 rounded-full ${activeStep === idx ? "bg-[#B85D2F] animate-ping" : "bg-zinc-700"}`} />
-              </div>
-              <h4 className="text-sm font-bold text-[#171411] mb-1.5">{step.title}</h4>
-              <p className="text-xs text-[#2A211B]/80 leading-relaxed">{step.desc}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Architecture System Diagram */}
-      <section id="architecture" className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 border-t border-[#C8B79E]">
-        <div className="text-center max-w-3xl mx-auto mb-16">
-          <span className="text-sm text-[#9A4C2A] font-bold tracking-wider uppercase">System Architecture</span>
-          <h2 className="text-3xl sm:text-4xl font-extrabold text-[#171411] mt-2">
-            Multi-Agent Stateflow Graph
-          </h2>
-          <p className="text-[#2A211B]/80 mt-4 leading-relaxed">
-            Understand how our agents leverage LangGraph states to retrieve facts, execute follow-ups, and compile evaluations.
-          </p>
-        </div>
-
-        {/* Beautiful Interactive Flow Diagram */}
-        <div className="relative p-8 rounded-[24px] border border-[#C8B79E] bg-[#DCCCB6]/30  overflow-x-auto">
-          <div className="flex items-center justify-between min-w-[900px] gap-4 px-4 py-8">
-            
-            <div className="flex flex-col items-center">
-              <div className="p-4 rounded-2xl border border-[#C8B79E] bg-[#DCCCB6] text-center w-36 shadow-lg">
-                <span className="text-xs font-bold block text-[#B85D2F] mb-1">CANDIDATE</span>
-                <span className="text-[10px] text-[#2A211B]/80">Profile Sync</span>
-              </div>
+                    <span className={`font-mono text-xs font-extrabold ${isActive ? "text-[#B85D2F]" : "text-[#75665A]"}`}>
+                      {String(idx + 1).padStart(2, '0')}
+                    </span>
+                    <div>
+                      <span className="block text-xs font-extrabold text-[#171411]">{step.title}</span>
+                      <span className="block text-[11px] text-[#75665A] mt-1 leading-relaxed">
+                        {step.desc}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
 
-            <div className="text-[#2A211B]/70 font-bold">➔</div>
-
-            <div className="flex flex-col items-center relative">
-              <div className="p-4 rounded-2xl border border-[#B85D2F]/20 bg-[#B85D2F]/5 text-center w-36 shadow-lg">
-                <span className="text-xs font-bold block text-[#171411] mb-1">PLANNER</span>
-                <span className="text-[10px] text-[#2A211B]/80">Generates Loop</span>
-              </div>
-            </div>
-
-            <div className="text-[#2A211B]/70 font-bold">➔</div>
-
-            <div className="flex flex-col items-center">
-              <div className="p-4 rounded-2xl border border-[#C8B79E] bg-[#DCCCB6] text-center w-36 shadow-lg">
-                <span className="text-xs font-bold block text-[#9A4C2A] mb-1">RETRIEVER</span>
-                <span className="text-[10px] text-[#2A211B]/80">Qdrant Vector DB</span>
-              </div>
-            </div>
-
-            <div className="text-[#2A211B]/70 font-bold">➔</div>
-
-            <div className="flex flex-col items-center">
-              <div className="p-4 rounded-2xl border border-[#9A4C2A]/30 bg-[#9A4C2A]/5 text-center w-38 shadow-lg">
-                <span className="text-xs font-bold block text-[#171411] mb-1">GENERATOR</span>
-                <span className="text-[10px] text-[#2A211B]/80">Context Questions</span>
-              </div>
-            </div>
-
-            <div className="text-[#2A211B]/70 font-bold">➔</div>
-
-            <div className="flex flex-col items-center">
-              <div className="p-4 rounded-2xl border border-[#C8B79E] bg-[#DCCCB6] text-center w-36 shadow-lg">
-                <span className="text-xs font-bold block text-red-500 mb-1">EVALUATOR</span>
-                <span className="text-[10px] text-[#2A211B]/80">Keyword Scorer</span>
-              </div>
-            </div>
-
-            <div className="text-[#2A211B]/70 font-bold">➔</div>
-
-            <div className="flex flex-col items-center">
-              <div className="p-4 rounded-2xl border border-[#C8B79E] bg-[#DCCCB6] text-center w-36 shadow-lg">
-                <span className="text-xs font-bold block text-[#B85D2F] mb-1">REPORTER</span>
-                <span className="text-[10px] text-[#2A211B]/80">Custom Path</span>
-              </div>
-            </div>
-
-          </div>
-        </div>
-      </section>
-
-      {/* Testimonials */}
-      <section className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 border-t border-[#C8B79E]">
-        <div className="text-center max-w-3xl mx-auto mb-16">
-          <span className="text-sm text-[#B85D2F] font-bold tracking-wider uppercase">Endorsements</span>
-          <h2 className="text-3xl sm:text-4xl font-extrabold text-[#171411] mt-2">
-            Loved by Engineers
-          </h2>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          {[
-            {
-              name: "Sarah Jenkins",
-              role: "Senior AI Engineer @ Stripe",
-              comment: "The adaptive questions on chunk overlap and hybrid retrieval merged BM25 are exactly what Stripe asks. Incredible practice system.",
-              rating: 5
-            },
-            {
-              name: "David Chen",
-              role: "Platform Engineer @ Notion",
-              comment: "Evaluating dynamic context loop errors in the debugging questions helped me understand model limitations before my system design cycles.",
-              rating: 5
-            },
-            {
-              name: "Marcus Aurelius",
-              role: "Staff Engineer @ Linear",
-              comment: "No purple dashboards. Just plain, blazing fast execution, code blocks that parse natively, and robust LangGraph execution. Perfect SaaS styling.",
-              rating: 5
-            }
-          ].map((t, index) => (
-            <div key={index} className="p-6 rounded-[20px] bg-[#DCCCB6]/40 border border-[#C8B79E] shadow-xl editorial-card">
-              <div className="flex items-center gap-1 mb-4 text-[#B85D2F]">
-                {[...Array(t.rating)].map((_, i) => (
-                  <Star key={i} className="w-4 h-4 fill-current" />
-                ))}
-              </div>
-              <p className="text-sm text-[#2A211B] leading-relaxed mb-6">"{t.comment}"</p>
+            {/* Right details display card */}
+            <div className="lg:col-span-7 p-8 rounded-2xl border border-[#C8B79E] bg-[#DCCCB6]/40 flex flex-col justify-between min-h-[480px]">
               <div>
-                <span className="block font-bold text-[#171411] text-sm">{t.name}</span>
-                <span className="text-xs text-[#9A4C2A]">{t.role}</span>
+                <div className="flex items-center gap-2 mb-6">
+                  <span className="px-2.5 py-1 rounded bg-[#B85D2F]/10 border border-[#B85D2F]/20 text-[9px] uppercase font-bold tracking-wider text-[#B85D2F]">
+                    Agent Simulation Phase {activeWorkflowStep + 1}
+                  </span>
+                </div>
+
+                <div className="space-y-6">
+                  <h3 className="text-xl font-extrabold text-[#171411]">
+                    {workflowSteps[activeWorkflowStep].title}
+                  </h3>
+                  <p className="text-sm leading-relaxed text-[#2A211B]/90 pl-4 border-l border-[#B85D2F]">
+                    {workflowSteps[activeWorkflowStep].desc}
+                  </p>
+                </div>
+              </div>
+
+              {/* Graphic schema */}
+              <div className="mt-12 p-5 rounded-xl border border-[#C8B79E] bg-[#E9DDCC]/50 text-left space-y-4">
+                <span className="text-[10px] font-mono uppercase tracking-wider text-[#75665A] block border-b border-[#C8B79E] pb-2">
+                  System Engine Activity
+                </span>
+                <div className="flex flex-wrap gap-2 text-[10px] font-mono text-[#75665A]">
+                  <span className={`px-2 py-1 rounded border ${activeWorkflowStep >= 0 ? "border-[#B85D2F] bg-white text-[#171411]" : "border-[#C8B79E]"}`}>
+                    Profile Analyzer
+                  </span>
+                  <span className="pt-1">➔</span>
+                  <span className={`px-2 py-1 rounded border ${activeWorkflowStep >= 2 ? "border-[#B85D2F] bg-white text-[#171411]" : "border-[#C8B79E]"}`}>
+                    Planner Agent
+                  </span>
+                  <span className="pt-1">➔</span>
+                  <span className={`px-2 py-1 rounded border ${activeWorkflowStep >= 3 ? "border-[#B85D2F] bg-white text-[#171411]" : "border-[#C8B79E]"}`}>
+                    Question Generator
+                  </span>
+                  <span className="pt-1">➔</span>
+                  <span className={`px-2 py-1 rounded border ${activeWorkflowStep >= 5 ? "border-[#B85D2F] bg-white text-[#171411]" : "border-[#C8B79E]"}`}>
+                    Evaluator Agent
+                  </span>
+                </div>
               </div>
             </div>
-          ))}
+
+          </div>
+        </div>
+      </section>
+
+      {/* Feature Grid Section */}
+      <section id="features" className="relative border-t border-[#C8B79E] py-24 sm:py-32">
+        <div className="max-w-7xl mx-auto px-6 sm:px-8">
+          <div className="max-w-3xl mb-20 text-left">
+            <span className="text-[10px] uppercase font-extrabold tracking-widest text-[#B85D2F] block mb-3">System Capabilities</span>
+            <h2 className="text-3xl sm:text-4xl font-extrabold text-[#171411] tracking-tight leading-tight">
+              Designed for Deep Concept Probing
+            </h2>
+            <p className="text-sm text-[#75665A] mt-4 leading-relaxed max-w-xl">
+              We leverage clean, robust system prompts and multi-agent coordination rather than superficial chat templates to map technical competence.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {features.map((feat, idx) => (
+              <div 
+                key={idx} 
+                className="p-6 rounded-2xl bg-[#DCCCB6]/40 border border-[#C8B79E] hover:border-[#B85D2F]/40 hover:bg-white hover:shadow-md transition duration-300 group cursor-default"
+              >
+                <div className="p-3 bg-[#E9DDCC] w-fit rounded-xl mb-5 group-hover:bg-[#B85D2F]/10 group-hover:text-[#B85D2F] transition duration-300">
+                  {feat.icon}
+                </div>
+                <h3 className="text-sm font-extrabold text-[#171411] mb-2">{feat.title}</h3>
+                <p className="text-xs text-[#75665A] leading-relaxed">{feat.description}</p>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
       {/* Pricing Options */}
-      <section id="pricing" className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 border-t border-[#C8B79E]">
-        <div className="text-center max-w-3xl mx-auto mb-16">
-          <span className="text-sm text-[#9A4C2A] font-bold tracking-wider uppercase">Fair Plans</span>
-          <h2 className="text-3xl sm:text-4xl font-extrabold text-[#171411] mt-2">
-            Pricing Tailored to your Goals
-          </h2>
-        </div>
+      <section id="pricing" className="relative border-t border-[#C8B79E] bg-[#E9DDCC]/20 py-24 sm:py-32">
+        <div className="max-w-7xl mx-auto px-6 sm:px-8">
+          <div className="max-w-3xl mb-20 text-left">
+            <span className="text-[10px] uppercase font-extrabold tracking-widest text-[#B85D2F] block mb-3">Pricing Models</span>
+            <h2 className="text-3xl sm:text-4xl font-extrabold text-[#171411] tracking-tight leading-tight">
+              Honest Plans for Cohorts and Developers
+            </h2>
+          </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          {pricing.map((plan, index) => (
-            <div 
-              key={index} 
-              className={`p-8 rounded-[24px] border relative flex flex-col justify-between ${
-                plan.popular 
-                  ? "bg-[#DCCCB6] border-[#B85D2F] shadow-[0_0_30px_rgba(16,185,129,0.15)]" 
-                  : "bg-[#DCCCB6]/40 border-[#C8B79E]"
-              }`}
-            >
-              {plan.popular && (
-                <div className="absolute top-0 right-8 -translate-y-1/2 px-3 py-1 rounded-full text-xs font-bold bg-[#B85D2F] text-black">
-                  POPULAR
-                </div>
-              )}
-              
-              <div>
-                <h3 className="text-xl font-bold text-[#171411] mb-2">{plan.name}</h3>
-                <p className="text-xs text-[#2A211B]/80 mb-6">{plan.description}</p>
-                
-                <div className="flex items-baseline gap-1 mb-8">
-                  <span className="text-4xl font-extrabold text-[#171411]">{plan.price}</span>
-                  <span className="text-xs text-[#2A211B]/60">/ month</span>
-                </div>
-
-                <hr className="border-[#C8B79E] mb-6" />
-
-                <ul className="space-y-4 text-sm text-[#2A211B] mb-8">
-                  {plan.features.map((feat, i) => (
-                    <li key={i} className="flex items-center gap-2.5">
-                      <Check className="w-4 h-4 text-[#B85D2F] flex-shrink-0" />
-                      {feat}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              <Link 
-                href="/login" 
-                className={`py-3 text-center rounded-xl text-sm font-semibold transition ${
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            {pricing.map((plan, idx) => (
+              <div 
+                key={idx} 
+                className={`p-8 rounded-2xl border relative flex flex-col justify-between min-h-[480px] ${
                   plan.popular 
-                    ? "bg-[#B85D2F] hover:bg-[#0ea571] text-[#F6EBDD] hover:shadow-[0_0_20px_rgba(16,185,129,0.25)]" 
-                    : "bg-white/5 hover:bg-white/10 text-[#171411] border border-[#C8B79E]"
+                    ? "bg-[#DCCCB6]/60 border-[#B85D2F] shadow-lg" 
+                    : "bg-[#DCCCB6]/30 border-[#C8B79E]"
                 }`}
               >
-                {plan.cta}
-              </Link>
-            </div>
-          ))}
+                {plan.popular && (
+                  <div className="absolute top-0 right-6 -translate-y-1/2 px-3 py-1 rounded-full text-[9px] uppercase tracking-wider font-extrabold bg-[#B85D2F] text-[#F6EBDD]">
+                    Highly Selected
+                  </div>
+                )}
+                
+                <div>
+                  <h3 className="text-base font-extrabold text-[#171411] mb-2">{plan.name}</h3>
+                  <p className="text-[11px] text-[#75665A] mb-6 leading-relaxed">{plan.description}</p>
+                  
+                  <div className="flex items-baseline gap-1 mb-8">
+                    <span className="text-4xl font-extrabold text-[#171411]">{plan.price}</span>
+                    <span className="text-xs text-[#75665A]/80 font-bold uppercase tracking-wider">/ month</span>
+                  </div>
+
+                  <hr className="border-[#C8B79E] mb-6" />
+
+                  <ul className="space-y-4 text-xs text-[#2A211B] mb-8 leading-relaxed">
+                    {plan.features.map((feat, i) => (
+                      <li key={i} className="flex items-center gap-2.5">
+                        <Check className="w-4 h-4 text-[#B85D2F] flex-shrink-0" />
+                        {feat}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <Link 
+                  href="/login" 
+                  className={`py-3.5 text-center rounded-xl text-xs font-extrabold uppercase tracking-wider transition duration-200 ${
+                    plan.popular 
+                      ? "bg-[#B85D2F] hover:bg-[#9A4C2A] text-[#F6EBDD] shadow-sm hover:shadow" 
+                      : "bg-[#E9DDCC] hover:bg-[#DCCCB6] text-[#2A211B] border border-[#C8B79E]"
+                  }`}
+                >
+                  {plan.cta}
+                </Link>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
       {/* Footer */}
-      <footer className="relative border-t border-[#C8B79E] bg-[#F6EBDD] paper-texture py-12">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center justify-between gap-6 text-sm text-[#2A211B]/60">
+      <footer className="relative border-t border-[#C8B79E] py-16 bg-[#F6EBDD]">
+        <div className="max-w-7xl mx-auto px-6 sm:px-8 flex flex-col md:flex-row items-center justify-between gap-6 text-[11px] font-bold uppercase tracking-wider text-[#75665A]">
           <div className="flex items-center gap-2">
             <Brain className="w-5 h-5 text-[#B85D2F]" />
-            <span className="font-extrabold text-[#171411] tracking-tight">
+            <span className="font-extrabold text-sm tracking-tight text-[#171411]">
               InterviewIQ <span className="text-[#B85D2F]">AI</span>
             </span>
           </div>
 
           <div className="flex gap-8">
-            <a href="https://github.com" target="_blank" rel="noopener noreferrer" className="hover:text-[#2A211B]">GitHub</a>
-            <a href="#" className="hover:text-[#2A211B]">Docs</a>
-            <a href="#" className="hover:text-[#2A211B]">Privacy</a>
-            <a href="#" className="hover:text-[#2A211B]">Terms</a>
-            <a href="#" className="hover:text-[#2A211B]">Contact</a>
+            <a href="#" className="hover:text-[#B85D2F]">Docs</a>
+            <a href="#" className="hover:text-[#B85D2F]">Privacy</a>
+            <a href="#" className="hover:text-[#B85D2F]">Terms</a>
+            <a href="#" className="hover:text-[#B85D2F]">Contact</a>
           </div>
 
-          <p>© 2026 InterviewIQ AI. Practice Smarter. Interview Better.</p>
+          <p className="normal-case font-normal text-slate-500">© 2026 InterviewIQ AI. Build the Interviewer. Not the Interview.</p>
         </div>
       </footer>
     </div>

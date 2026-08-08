@@ -194,6 +194,56 @@ class AgentEngine:
         else:
             logger.info("AgentEngine running in REAL mode using Gemini.")
 
+    def _build_personalization_context(self, candidate: dict, next_day: int) -> str:
+        if not candidate:
+            return ""
+        missions = candidate.get("missions", [])
+        signals = candidate.get("signals", {})
+        
+        # 1. Check current day mission status
+        mission_info = "No record of this topic in candidate's course history."
+        for m in missions:
+            if m.get("day") == next_day:
+                attempts = m.get("attempts")
+                passed = m.get("passed", False)
+                skipped = m.get("skipped", False)
+                if skipped:
+                    mission_info = f"Candidate SKIPPED the course mission for this topic. Do NOT assume mastery. Start with foundational or conceptual probing."
+                elif passed:
+                    if attempts is not None:
+                        if attempts >= 3:
+                            mission_info = f"Candidate PASSED this topic's mission but took {attempts} attempts, suggesting they might have struggled with some aspects. Check for common misconceptions."
+                        else:
+                            mission_info = f"Candidate PASSED this topic's mission easily in {attempts} attempt(s), suggesting strong initial grasp. You can ask deeper technical questions."
+                    else:
+                        mission_info = f"Candidate completed this topic's mission."
+                break
+                
+        # 2. Check general learning signals
+        commit_days = signals.get("commitDays", 0)
+        completed = signals.get("missionsCompleted", 0)
+        first_try = signals.get("missionsFirstTry", 0)
+        
+        learning_signal_summary = ""
+        if completed > 0:
+            success_ratio = first_try / completed
+            if success_ratio >= 0.8:
+                learning_signal_summary = "Candidate has a strong learning signal (high ratio of first-try pass). Prioritize deep, high-level system design or optimization questions."
+            elif success_ratio <= 0.4:
+                learning_signal_summary = "Candidate has a weaker learning signal (often required multiple attempts). Ask supportive, foundational questions focusing on core concepts before moving to implementation details."
+                
+        context = f"""Candidate's course history for today's topic (Day {next_day}):
+- Status: {mission_info}
+
+Candidate's learning signals:
+- Commit days: {commit_days}
+- Missions completed: {completed}
+- First-try passes: {first_try}
+- Guidance: {learning_signal_summary if learning_signal_summary else "Maintain standard difficulty matching experience level."}
+"""
+        return context
+
+
     def _build_langgraph_workflow(self):
         # Kept for architectural compatibility, fell back to real nodes if langgraph used
         pass
@@ -293,10 +343,23 @@ class AgentEngine:
             curr_text = json.dumps(days_summary, indent=2)
             
         profile_text = json.dumps(candidate_profile, indent=2) if candidate_profile else "No candidate profile provided."
+        personalization_guidance = ""
+        if candidate_profile:
+            missions = candidate_profile.get("missions", [])
+            skipped_days = [m.get("day") for m in missions if m.get("skipped")]
+            struggled_days = [m.get("day") for m in missions if m.get("attempts", 0) >= 3]
+            strong_days = [m.get("day") for m in missions if m.get("attempts", 0) == 1]
+            personalization_guidance = f"""
+Candidate Personalization Guidelines:
+- Skipped Days (probe foundations here, do NOT assume mastery): {skipped_days}
+- Struggled Days (look out for misconceptions, keep questioning supportive): {struggled_days}
+- Strong Days (ask deep architectural questions, push difficulty): {strong_days}
+"""
         
         prompt = f"""You are planning an AI engineering technical interview.
 Candidate Profile:
 {profile_text}
+{personalization_guidance}
 
 Target Difficulty: {difficulty}
 Focus Topics: {', '.join(focus_topics) if focus_topics else 'General curriculum sequence'}
@@ -399,6 +462,9 @@ Return a list of planned questions using the requested JSON schema.
         prompt = f"""You are the Question Generator agent in an AI Interview platform.
 Candidate Profile:
 {json.dumps(candidate_profile, indent=2)}
+
+Candidate Personalization Context:
+{self._build_personalization_context(candidate_profile, target_day)}
 
 Focus Topics: {', '.join(focus_topics) if focus_topics else 'General curriculum sequence'}
 
@@ -679,6 +745,9 @@ Return a structured JSON output matching the FinalReportSchema.
 The candidate's name is {candidate.get('member', {}).get('name', 'Candidate')}.
 Their experience level is {candidate.get('member', {}).get('yearsExperience', 2.0)} years.
 
+Candidate Personalization Context:
+{self._build_personalization_context(candidate, next_day)}
+
 Curriculum Context for this turn:
 Day: {next_day}
 Topic: {next_day_title}
@@ -721,12 +790,8 @@ Return a structured JSON output matching the GeneratedQuestionSchema.
                 "reason": q_data.reason
             }
         except Exception as e:
-            logger.error(f"Unified generate_question_gemini failed: {e}")
-            return {
-                "reply": f"Let's move on. Can you explain {next_day_title} and objectives?",
-                "topic": next_day_title,
-                "reason": "Error fallback"
-            }
+            logger.error(f"Unified generate_question_gemini failed: {e}. Raising exception.")
+            raise RuntimeError(f"Gemini API failure in unified generator: {e}")
 
     def evaluate_answer_gemini(self, question_content: str, answer_content: str, question_topic: str) -> dict:
         """
