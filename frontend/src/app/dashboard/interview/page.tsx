@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import Link from "next/link";
 import { 
   Play, Pause, Award, Brain, Clock, HelpCircle, 
   MessageSquare, Volume2, VolumeX, Sparkles, Send, 

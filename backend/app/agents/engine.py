@@ -1,12 +1,15 @@
+import os
 import json
 import logging
+import time
 from typing import TypedDict, List, Dict, Any, Optional
 from datetime import datetime
+from pydantic import BaseModel, Field
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# State definition for LangGraph
+# State definition for LangGraph (kept for structure if needed)
 class InterviewState(TypedDict):
     candidate_id: int
     candidate_name: str
@@ -20,7 +23,16 @@ class InterviewState(TypedDict):
     active_agent: str
     report: Optional[Dict[str, Any]]
 
-# Try to import LangGraph and LangChain. Fallback if not installed or missing keys.
+# Import new google-genai SDK
+try:
+    from google import genai
+    from google.genai import types
+    from google.genai.errors import APIError
+    HAS_GEMINI = True
+except ImportError:
+    HAS_GEMINI = False
+
+# Try importing LangGraph/LangChain just to maintain compatibility if other files expect HAS_LANGCHAIN
 try:
     from langchain_core.prompts import ChatPromptTemplate
     from langchain_core.output_parsers import JsonOutputParser
@@ -30,497 +42,703 @@ try:
 except ImportError:
     HAS_LANGCHAIN = False
 
+
+# ========================================================
+# Pydantic Schemas for Gemini Structured JSON Outputs
+# ========================================================
+
+class PlannedQuestion(BaseModel):
+    topic: str = Field(description="The topic name matching or inspired by a curriculum day's title.")
+    question_type: str = Field(description="One of: conceptual, scenario, debugging, design.")
+    content: str = Field(description="The actual question text, technical and tailored to candidate's background.")
+    curriculum_day: int = Field(description="The curriculum day number this question aligns with.")
+    order_index: int = Field(description="The sequential number of the question in the interview.")
+
+class PlannedInterview(BaseModel):
+    questions: List[PlannedQuestion]
+
+class GeneratedQuestionSchema(BaseModel):
+    reply: str = Field(description="The question content. Make it conversational, engaging, and precise.")
+    topic: str = Field(description="The topic of this question.")
+    reason: str = Field(description="A brief explanation of why this question and difficulty level were selected.")
+    question_type: str = Field(description="One of: conceptual, scenario, debugging, design.")
+
+class EvaluationSchema(BaseModel):
+    accuracy_score: float = Field(description="Score from 0 to 100 representing technical correctness.")
+    depth_score: float = Field(description="Score from 0 to 100 representing detail and understanding of trade-offs.")
+    problem_solving_score: float = Field(description="Score from 0 to 100 representing logical reasoning.")
+    communication_score: float = Field(description="Score from 0 to 100 representing structural clarity.")
+    feedback: str = Field(description="Constructive professional feedback paragraph for the candidate.")
+    weak_points: List[str] = Field(description="Specific weak spots, knowledge gaps, or misconceptions.")
+    strong_points: List[str] = Field(description="Key concepts and terminology correctly addressed by candidate.")
+
+class VideoRecommendation(BaseModel):
+    title: str = Field(description="Title of the educational video.")
+    duration: str = Field(description="Duration estimate (e.g. 15m).")
+    url: str = Field(description="YouTube or educational link.")
+
+class ReadingRecommendation(BaseModel):
+    title: str = Field(description="Title of article or paper.")
+    author: str = Field(description="Author or organization name.")
+    type: str = Field(description="Type: Article, Paper, or Documentation.")
+
+class LearningPathSchema(BaseModel):
+    recommended_videos: List[VideoRecommendation]
+    recommended_readings: List[ReadingRecommendation]
+    suggested_practice_problems: List[str]
+
+class FinalReportSchema(BaseModel):
+    overall_score: float = Field(description="Weighted overall score out of 100.")
+    technical_accuracy: float = Field(description="Average technical accuracy score.")
+    communication: float = Field(description="Average communication score.")
+    depth: float = Field(description="Average depth score.")
+    problem_solving: float = Field(description="Average problem solving score.")
+    system_design: float = Field(description="Estimate of system design capabilities (0 to 100).")
+    candidate_confidence: float = Field(description="Estimate of candidate confidence level based on responses (0 to 100).")
+    strengths: List[str] = Field(description="Top 3-4 strengths identified in the interview.")
+    weaknesses: List[str] = Field(description="Top 3-4 gaps or weaknesses identified.")
+    recommendations: List[str] = Field(description="Actionable recommendations for improvement.")
+    learning_path: LearningPathSchema
+
+
+# ========================================================
+# Helper for Rate Limit Handling (Exponential Backoff)
+# ========================================================
+
+def call_gemini_with_retry(client: Any, model: str, contents: str, response_schema: Any, retries: int = 6, delay: float = 2.0) -> Any:
+    for i in range(retries):
+        try:
+            response = client.models.generate_content(
+                model=model,
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=response_schema,
+                    temperature=0.7,
+                )
+            )
+            return response.parsed
+        except Exception as e:
+            err_msg = str(e).lower()
+            
+            # Check if it is a daily limit quota error
+            is_daily_limit = (
+                "requestsperday" in err_msg or
+                "requests_per_day" in err_msg or
+                "requests per day" in err_msg
+            )
+            
+            if is_daily_limit:
+                logger.error(f"Gemini API daily quota exceeded: {e}. Failing immediately to trigger fallback.")
+                raise e
+                
+            is_retryable = (
+                "429" in err_msg or 
+                "resource_exhausted" in err_msg or 
+                "rate limit" in err_msg or 
+                "quota" in err_msg or 
+                "temporarily unavailable" in err_msg or
+                "503" in err_msg
+            )
+            if is_retryable and i < retries - 1:
+                # Try to parse exact retry delay from the error message (e.g., "Please retry in 46.147094837s")
+                wait_seconds = delay
+                if "please retry in " in err_msg:
+                    try:
+                        parts = err_msg.split("please retry in ")
+                        if len(parts) > 1:
+                            sec_str = parts[1].split("s")[0].strip()
+                            # Add 1.5 seconds safety margin
+                            wait_seconds = float(sec_str) + 1.5
+                    except Exception:
+                        pass
+                
+                logger.warning(f"Gemini API rate limit/transient error (retry {i+1}/{retries}): {e}. Retrying in {wait_seconds}s...")
+                time.sleep(wait_seconds)
+                # Only double delay if we didn't parse a custom wait time, or keep adjusting it
+                if wait_seconds == delay:
+                    delay *= 2
+            else:
+                logger.error(f"Gemini API call failed permanently: {e}")
+                raise e
+
+
+
+
+# ========================================================
+# AgentEngine implementation
+# ========================================================
+
 class AgentEngine:
     def __init__(self):
-        self.use_simulator = settings.SIMULATOR_MODE or not settings.OPENAI_API_KEY
-        if self.use_simulator:
-            logger.info("AgentEngine running in SIMULATOR Mode (no OpenAI API key or Simulator config active).")
+        self.api_key = settings.GEMINI_API_KEY or os.environ.get("GEMINI_API_KEY")
+        if self.api_key:
+            try:
+                from google import genai
+                # Initialize GenAI Client using SDK
+                self.client = genai.Client(api_key=self.api_key)
+                self.use_gemini = True
+                logger.info("AgentEngine: Successfully initialized google-genai client.")
+            except ImportError:
+                self.use_gemini = False
+                logger.warning("google-genai package not found. Falling back to simulator mode.")
         else:
-            logger.info("AgentEngine running in REAL MULTI-AGENT Mode using LangGraph and OpenAI.")
-            if HAS_LANGCHAIN:
-                self._build_langgraph_workflow()
-            else:
-                logger.warning("LangGraph libraries not imported successfully. Falling back to simulator.")
-                self.use_simulator = True
+            self.use_gemini = False
+            logger.warning("GEMINI_API_KEY is not set. Falling back to simulator mode.")
+
+        # Real multi-agent mode defaults to false unless OpenAI key is available or LangGraph is compiled
+        self.use_simulator = settings.SIMULATOR_MODE or not self.use_gemini
+        
+        if self.use_simulator:
+            logger.info("AgentEngine running in SIMULATOR Mode (Simulator configs or no Gemini key present).")
+        else:
+            logger.info("AgentEngine running in REAL mode using Gemini.")
 
     def _build_langgraph_workflow(self):
-        # Build standard LangGraph workflow
-        try:
-            workflow = StateGraph(InterviewState)
-            
-            # Define nodes
-            workflow.add_node("planner", self._real_planner_node)
-            workflow.add_node("question_generator", self._real_question_generator_node)
-            workflow.add_node("evaluator", self._real_evaluator_node)
-            workflow.add_node("reporter", self._real_reporter_node)
-            
-            # Define edges
-            workflow.set_entry_point("planner")
-            workflow.add_conditional_edges(
-                "question_generator",
-                self._router_after_question,
-                {
-                    "continue": "evaluator",
-                    "end": "reporter"
-                }
-            )
-            workflow.add_edge("evaluator", "question_generator")
-            workflow.add_edge("reporter", END)
-            
-            self.graph = workflow.compile()
-            logger.info("LangGraph workflow compiled successfully.")
-        except Exception as e:
-            logger.error(f"Error compiling LangGraph workflow: {e}")
-            self.use_simulator = True
+        # Kept for architectural compatibility, fell back to real nodes if langgraph used
+        pass
 
-    # Real Agent Nodes (using OpenAI)
-    def _real_planner_node(self, state: InterviewState) -> Dict[str, Any]:
-        logger.info(f"Real Planner Node triggered for candidate {state['candidate_name']}")
-        # Simulated structure for planner, returns generated focus list & skeleton plan
-        return {"active_agent": "question_generator"}
+    def _load_curriculum_file(self) -> Optional[Dict[str, Any]]:
+        import os
+        import json
+        path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "data", "curriculum.json")
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        return None
 
-    def _real_question_generator_node(self, state: InterviewState) -> Dict[str, Any]:
-        logger.info(f"Real Question Generator node at index {state['current_index']}")
-        return {"active_agent": "evaluator"}
-
-    def _real_evaluator_node(self, state: InterviewState) -> Dict[str, Any]:
-        logger.info("Real Evaluator node scoring answer.")
-        return {"active_agent": "question_generator"}
-
-    def _real_reporter_node(self, state: InterviewState) -> Dict[str, Any]:
-        logger.info("Real Reporter compiling scores and custom learning plan.")
-        return {"report": {}}
-
-    def _router_after_question(self, state: InterviewState) -> str:
-        if state["current_index"] >= state["questions_count"]:
-            return "end"
-        return "continue"
+    def _load_candidates_file(self) -> Optional[Dict[str, Any]]:
+        import os
+        import json
+        path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "data", "candidates.json")
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        return None
 
     # ========================================================
-    # SIMULATOR AGENT SYSTEM (Rich Curriculum-Aware Simulator)
+    # QUESTION PLANNING & GENERATION
     # ========================================================
-    
-    # Curriculum-aligned Pool of Questions
-    QUESTION_POOL = {
-        "Junior": [
-            {
-                "topic": "RAG Basics",
-                "question_type": "conceptual",
-                "content": "Explain what Retrieval-Augmented Generation (RAG) is and how it solves the hallucination problem in LLMs.",
-                "hint": "Think about how giving the LLM external data to read before answering helps ground its response."
-            },
-            {
-                "topic": "Vector Databases",
-                "question_type": "conceptual",
-                "content": "What is a vector database, and why do we use it instead of SQL databases for searching text similarity?",
-                "hint": "Consider high-dimensional embeddings and what algorithms like cosine similarity measure."
-            },
-            {
-                "topic": "Embeddings & Distance Metrics",
-                "question_type": "debugging",
-                "content": "Assume you have two embedding vectors: A = [1.0, 0.0] and B = [0.0, 1.0]. What is their cosine similarity? Why would they represent unrelated text chunks?",
-                "hint": "Cosine similarity measures the cosine of the angle between two vectors. A dot product of perpendicular vectors is 0."
-            },
-            {
-                "topic": "Chunking Strategies",
-                "question_type": "conceptual",
-                "content": "Why is it important to use 'chunk overlap' when dividing long documents into sections for embedding?",
-                "hint": "Think about information loss at the boundaries where a document is split."
-            },
-            {
-                "topic": "Pinecone vs Qdrant",
-                "question_type": "conceptual",
-                "content": "Can you compare Qdrant and Pinecone in terms of deployment options? When would you use Qdrant locally?",
-                "hint": "Qdrant is open-source and has an in-memory/Docker mode. Pinecone is primarily managed SaaS."
-            },
-            {
-                "topic": "Model Context Protocol",
-                "question_type": "conceptual",
-                "content": "What is the Model Context Protocol (MCP) and how does it help LLMs query files or APIs securely?",
-                "hint": "MCP provides a standardized protocol for models to access local context and tools."
-            },
-            {
-                "topic": "RAG Quality",
-                "question_type": "scenario",
-                "content": "If your RAG system is retrieving irrelevant document chunks, what are the first two things you would adjust?",
-                "hint": "Check the chunking size/overlap and the embedding model, or add a re-ranker step."
-            },
-            {
-                "topic": "Best Practices",
-                "question_type": "scenario",
-                "content": "Why should you avoid sending entire documents directly in the LLM prompt window instead of doing semantic search retrieval?",
-                "hint": "Think about context window limits, API costs, latency, and noise/distractions."
-            }
-        ],
-        "Mid": [
-            {
-                "topic": "RAG Basics & Indexing",
-                "question_type": "conceptual",
-                "content": "Detail the differences between fixed-size chunking and semantic chunking. When would semantic chunking yield superior retrieval quality?",
-                "hint": "Semantic chunking splits text on semantic shifts (e.g. paragraph boundaries or embedding differences) rather than characters."
-            },
-            {
-                "topic": "Vector Similarity",
-                "question_type": "debugging",
-                "content": "You observe that cosine similarity scores in your vector store are clustered between 0.85 and 0.95, making thresholds useless. What is causing this, and how do you normalize it?",
-                "hint": "High-dimensional embeddings often lie in a narrow cone. Normalization or applying min-max scaling to scores can help."
-            },
-            {
-                "topic": "Retrieval Quality",
-                "question_type": "scenario",
-                "content": "Design a pipeline that uses a Cross-Encoder Re-ranker. Explain why retrieval needs a first-stage bi-encoder followed by a second-stage cross-encoder.",
-                "hint": "Bi-encoders are fast (O(1) lookups) but lose token interaction. Cross-encoders model deep interaction but are slow."
-            },
-            {
-                "topic": "System Design",
-                "question_type": "design",
-                "content": "Design a scalable indexing pipeline for a vector database like Qdrant when 10,000 PDFs are uploaded daily. How would you handle rate-limiting and updates?",
-                "hint": "Consider using an asynchronous worker queue (Celery/RabbitMQ), batching vector inserts, and caching embeddings."
-            },
-            {
-                "topic": "Pinecone vs Qdrant",
-                "question_type": "design",
-                "content": "Compare Qdrant's HNSW index structure with Pinecone's serverless model. How does HNSW optimize search latency?",
-                "hint": "HNSW (Hierarchical Navigable Small World) uses multi-layer graph structures for fast log-time similarity searches."
-            },
-            {
-                "topic": "Model Context Protocol",
-                "question_type": "design",
-                "content": "How would you design a tool server using Model Context Protocol (MCP) to let an LLM interact with a PostgreSQL database safely?",
-                "hint": "Sanitize inputs, implement read-only transactions, limit record returns, and define explicit tool schemas."
-            },
-            {
-                "topic": "Scaling",
-                "question_type": "optimization",
-                "content": "How does payload filtering in Qdrant prevent checking all vector points during a query? Describe the difference between pre-filtering and post-filtering.",
-                "hint": "Pre-filtering reduces the search space before traversing the HNSW graph; post-filtering discards nodes after searching."
-            },
-            {
-                "topic": "Trade-off Analysis",
-                "question_type": "design",
-                "content": "Compare the trade-offs of using sparse embeddings (e.g. BM25) vs dense embeddings. When would a hybrid retrieval merge them?",
-                "hint": "BM25 excels at keyword matching (serial numbers, names). Dense embeddings capture semantics. Merge using Reciprocal Rank Fusion (RRF)."
-            }
-        ],
-        "Senior": [
-            {
-                "topic": "Advanced Retrieval Quality",
-                "question_type": "design",
-                "content": "Explain the mechanics of Parent-Child chunking (or Auto-Merging Retrieval). How does this separation of retrieval units and synthesis units improve generation?",
-                "hint": "Retrieve small, highly focused chunks to find exact matches, but pass the larger parent context to the LLM for synthesis."
-            },
-            {
-                "topic": "Vector DB Scaling",
-                "question_type": "optimization",
-                "content": "Describe how you would configure Qdrant for memory optimization. What are the trade-offs of storing vectors in-memory vs on-disk (mmap) and using scalar quantization?",
-                "hint": "Quantization (e.g. float32 to int8) reduces memory footprints by 75% at a minor cost to precision. mmap moves vectors off RAM."
-            },
-            {
-                "topic": "System Design & Architecture",
-                "question_type": "design",
-                "content": "Design an enterprise-grade agentic RAG system that supports multi-tenant document isolation, metadata-based access control, and dynamic query routing.",
-                "hint": "Utilize tenant namespaces, implement JWT-linked payload filters in vector queries, and use a router agent to select vector indexes."
-            },
-            {
-                "topic": "Model Context Protocol",
-                "question_type": "design",
-                "content": "Explain how you would deploy a cluster of MCP hosts to orchestrate complex operations across distributed developer environments.",
-                "hint": "Define secure host-client handshakes, rate-limit agents, and sandbox dynamic code executions."
-            },
-            {
-                "topic": "Advanced Optimization",
-                "question_type": "debugging",
-                "content": "Your agent loops endlessly when using a ReAct framework to query a vector database, repeatedly retrieving the same results. How do you resolve this context loop?",
-                "hint": "Add a short-term memory block containing query hashes, limit maximum agent steps, and penalize repetitive queries in prompts."
-            },
-            {
-                "topic": "Trade-off Analysis",
-                "question_type": "design",
-                "content": "Evaluate the architectural differences between Cohere Rerank, FlashRank, and standard Cross-Encoders. How does selection affect pricing and latency?",
-                "hint": "SaaS re-rankers increase network hops. Open-source models (FlashRank) run locally with sub-10ms latency but require local compute."
-            },
-            {
-                "topic": "Scaling & Deployment",
-                "question_type": "design",
-                "content": "Describe the replication, consensus (Raft), and sharding model in a distributed Qdrant cluster under high write loads.",
-                "hint": "Distributed Qdrant shards collections across nodes; Raft ensures consistency in collection schemas and cluster topology."
-            },
-            {
-                "topic": "Best Practices",
-                "question_type": "design",
-                "content": "Explain how you would evaluate RAG retrieval quality using metrics like Hit Rate, MRR (Mean Reciprocal Rank), and NDCG (Normalized Discounted Cumulative Gain).",
-                "hint": "Use frameworks like Ragas or TruLens to automate evaluation of faithfulness, answer relevance, and context recall."
-            }
-        ],
-        "Lead": [
-            {
-                "topic": "Enterprise AI Architecture",
-                "question_type": "design",
-                "content": "Design a high-availability, globally distributed AI Interview Engine. It must handle streaming text, real-time voice synthesis, multi-agent evaluation, and persistent memory under 500ms latency budget. What caching, queuing, and edge configurations do you employ?",
-                "hint": "Use edge-deployed servers for low-latency streaming, Redis cache for session memory, and asynchronous brokers to dump evaluations."
-            },
-            {
-                "topic": "Model Context Protocol & Security",
-                "question_type": "design",
-                "content": "How would you draft a security policy and gateway architecture to prevent Prompt Injection and Data Exfiltration when agents access enterprise databases via MCP?",
-                "hint": "Implement strict input validation schemas, restrict outgoing API endpoints from inside the agent execution sandbox, and enforce human-in-the-loop checks."
-            },
-            {
-                "topic": "Vector Database Benchmarking",
-                "question_type": "optimization",
-                "content": "Analyze the performance characteristics of HNSW graph builds under varying parameters (M, ef_construction, ef_search). How do you balance recall accuracy against index build speed and QPS?",
-                "hint": "Higher M and ef_construction increase graph density, boosting recall and search speed but significantly extending indexing times."
-            },
-            {
-                "topic": "Advanced Evaluation & Alignment",
-                "question_type": "design",
-                "content": "How do you mitigate bias in LLM-as-a-judge interview evaluations? Design an automated pipeline that self-corrects evaluation discrepancy across candidate categories.",
-                "hint": "Implement prompt sanitization (removing candidate names/origins), use a consensus voting system with multiple model families, and align scores."
-            }
-        ]
-    }
 
-    def start_interview_simulation(self, difficulty: str, focus_topics: List[str], length: int) -> List[Dict[str, Any]]:
+    def start_interview_simulation(self, difficulty: str, focus_topics: List[str], length: int, candidate_profile: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
         """
-        Creates a list of 8+ structured questions for the interview simulation.
+        Dynamically plans questions using Gemini based on curriculum and candidate profile, or uses default fallback list.
         """
-        # Fallback to Mid if difficulty not in pool
-        pool = self.QUESTION_POOL.get(difficulty, self.QUESTION_POOL["Mid"])
+        curriculum = self._load_curriculum_file()
         
-        # Filter based on focus topics if provided, or grab from general pool
-        selected = []
-        if focus_topics:
-            normalized_topics = [t.lower() for t in focus_topics]
-            selected = [q for q in pool if any(topic in q["topic"].lower() for topic in normalized_topics)]
+        # fallback lists defined to guarantee safety
+        default_days = [7, 8, 12, 16, 22, 23]
         
-        # Fill up to requested length
-        remaining = [q for q in pool if q not in selected]
-        selected.extend(remaining)
-        selected = selected[:length]
-        
-        # Ensure minimum 8 questions
-        if len(selected) < length:
-            # Add from Mid or Senior pool to pad
-            fallback_pool = self.QUESTION_POOL["Mid"] if difficulty != "Mid" else self.QUESTION_POOL["Senior"]
-            for q in fallback_pool:
-                if q not in selected:
-                    selected.append(q)
-                if len(selected) >= length:
+        if not self.use_gemini:
+            # Fallback simulator logic (as originally written)
+            logger.info("Simulator: Pre-generating standard curriculum-aligned question list.")
+            if not curriculum or "days" not in curriculum:
+                return [{"id": 1, "content": "Explain RAG Basics.", "topic": "RAG", "difficulty": difficulty, "order_index": 1, "question_type": "conceptual"}]
+            
+            days_list = curriculum["days"]
+            selected_days = []
+            for num in default_days:
+                day_obj = next((d for d in days_list if d["day"] == num), None)
+                if day_obj:
+                    selected_days.append(day_obj)
+            for d in days_list:
+                if len(selected_days) >= 6:
                     break
-        
-        # Assign order index
-        for idx, q in enumerate(selected):
-            q["order_index"] = idx + 1
-            if "question_type" not in q:
-                q["question_type"] = "conceptual"
-        
-        return selected
+                if d not in selected_days:
+                    selected_days.append(d)
+            
+            questions = []
+            # Fill questions up to length
+            for idx in range(length):
+                day_obj = selected_days[idx % len(selected_days)]
+                day_num = day_obj["day"]
+                title = day_obj["title"]
+                obj = day_obj["objectives"][0] if day_obj["objectives"] else "Understand tools."
+                
+                is_followup = idx in [1, 3] # Make Q2 and Q4 follow-ups
+                if is_followup:
+                    questions.append({
+                        "id": idx + 1,
+                        "content": f"FOLLOW_UP_Q{idx+1}",
+                        "topic": "Follow-up",
+                        "difficulty": difficulty,
+                        "order_index": idx + 1,
+                        "question_type": "scenario",
+                        "curriculum_day": day_num
+                    })
+                else:
+                    questions.append({
+                        "id": idx + 1,
+                        "content": f"Let's discuss Day {day_num}, '{title}'. How do you achieve or explain: {obj}?",
+                        "topic": title,
+                        "difficulty": difficulty,
+                        "order_index": idx + 1,
+                        "question_type": "conceptual",
+                        "curriculum_day": day_num
+                    })
+            return questions
 
-    def evaluate_answer_simulation(self, question_content: str, answer_content: str, question_topic: str) -> Dict[str, Any]:
+        # GEMINI REAL CALL
+        logger.info(f"Gemini: Planning customized interview of length {length} for candidate profile.")
+        curr_text = ""
+        if curriculum and "days" in curriculum:
+            days_summary = []
+            for d in curriculum["days"]:
+                days_summary.append({
+                    "day": d["day"],
+                    "title": d["title"],
+                    "objectives": d["objectives"],
+                    "tools": d.get("tools", [])
+                })
+            curr_text = json.dumps(days_summary, indent=2)
+            
+        profile_text = json.dumps(candidate_profile, indent=2) if candidate_profile else "No candidate profile provided."
+        
+        prompt = f"""You are planning an AI engineering technical interview.
+Candidate Profile:
+{profile_text}
+
+Target Difficulty: {difficulty}
+Focus Topics: {', '.join(focus_topics) if focus_topics else 'General curriculum sequence'}
+Total Interview Length: {length} questions
+
+Curriculum Days & Objectives:
+{curr_text}
+
+Your task:
+Plan exactly {length} distinct questions. 
+Assign each question to a specific day from the curriculum. The sequence should cover the focus topics first (if any), then proceed through the curriculum days (e.g., embeddings, vector databases, RAG, agentic AI, evaluation).
+Ensure the questions target the specified curriculum day objectives and use the tools listed.
+Do NOT hardcode standard generic questions. Make each question technical, practical, and appropriate for a candidate with this profile (matching experience level and skills).
+Ensure the questions have an order_index from 1 to {length}.
+
+Return a list of planned questions using the requested JSON schema.
+"""
+        try:
+            from google.genai import types
+            planned: PlannedInterview = call_gemini_with_retry(
+                client=self.client,
+                model=settings.GEMINI_MODEL,
+                contents=prompt,
+                response_schema=PlannedInterview,
+                retries=3
+            )
+            
+            questions = []
+            for i, q in enumerate(planned.questions):
+                questions.append({
+                    "id": i + 1,
+                    "content": q.content,
+                    "topic": q.topic,
+                    "difficulty": difficulty,
+                    "order_index": q.order_index if q.order_index else i + 1,
+                    "question_type": q.question_type if q.question_type else "conceptual",
+                    "curriculum_day": q.curriculum_day
+                })
+            return questions
+        except Exception as e:
+            if self.use_gemini:
+                logger.error(f"Gemini failed planning interview questions: {e}. Raising exception.")
+                raise RuntimeError(f"Gemini API failure during question planning: {e}")
+            logger.error(f"Gemini failed planning interview questions: {e}. Falling back to default curriculum sequence.")
+            # Default sequence fallback
+            return self.start_interview_simulation(difficulty, focus_topics, length, candidate_profile=None)
+
+    # ========================================================
+    # ADAPTIVE QUESTION & FOLLOW-UP GENERATOR
+    # ========================================================
+
+    def generate_adaptive_question(
+        self,
+        candidate_profile: dict,
+        history: List[Dict[str, Any]],
+        next_question_index: int,
+        total_questions: int,
+        focus_topics: List[str]
+    ) -> Dict[str, Any]:
         """
-        Simulates evaluator agent grading candidate's answer.
-        Analyzes keywords and length to compute scores and give constructive feedback.
+        Dynamically refines or generates the next question using Gemini to adapt difficulty and context.
         """
-        ans_lower = answer_content.lower()
-        length = len(answer_content.split())
-        
-        # Keyword mapping for curriculum topics to estimate technical accuracy
-        keywords_map = {
-            "rag": ["retrieval", "generation", "hallucination", "context", "prompt", "chunk", "llm"],
-            "vector": ["embedding", "database", "distance", "similarity", "cosine", "dot product", "high-dimensional", "hnsw", "qdrant", "pinecone"],
-            "chunking": ["overlap", "split", "boundary", "character", "semantic", "size", "loss"],
-            "pinecone": ["qdrant", "managed", "saas", "open-source", "mmap", "local", "docker", "hnsw"],
-            "model context protocol": ["mcp", "protocol", "schema", "secure", "tool", "server", "host", "client"],
-            "quality": ["re-rank", "cross-encoder", "bi-encoder", "hybrid", "bm25", "dense", "sparse", "rrf"],
-            "scaling": ["index", "quantization", "scalar", "mmap", "payload", "filter", "pre-filter", "post-filter", "shard", "raft"]
-        }
-        
-        # Count matched keywords
-        matches = 0
-        topic_words = keywords_map.get(question_topic.lower(), [])
-        # Check general words as well
-        all_words = topic_words + ["system", "design", "scale", "performance", "architecture", "trade-off", "latency", "cost"]
-        
-        matched_keys = []
-        for word in all_words:
-            if word in ans_lower:
-                matches += 1
-                matched_keys.append(word)
-        
-        # Scoring logic
-        # 1. Accuracy based on keywords
-        if matches >= 5:
-            accuracy = 90.0 + min(10.0, matches)
-        elif matches >= 3:
-            accuracy = 78.0 + (matches * 3)
-        elif matches >= 1:
-            accuracy = 60.0 + (matches * 5)
-        else:
-            accuracy = 45.0 + min(10.0, length / 10.0)
+        if not self.use_gemini:
+            return {}
             
-        # 2. Depth based on length
-        if length > 120:
-            depth = 92.0 + min(8.0, (length - 120) / 20.0)
-        elif length > 60:
-            depth = 75.0 + ((length - 60) * 0.3)
-        elif length > 20:
-            depth = 50.0 + ((length - 20) * 0.6)
+        curriculum = self._load_curriculum_file()
+        days_sequence = [7, 8, 12, 16, 22, 23]
+        target_day = 7
+        if next_question_index == 2:
+            target_day = 7
+        elif next_question_index == 3:
+            target_day = 8
+        elif next_question_index == 4:
+            target_day = 8
+        elif next_question_index == 5:
+            target_day = 12
+        elif next_question_index == 6:
+            target_day = 16
+        elif next_question_index == 7:
+            target_day = 22
+        elif next_question_index == 8:
+            target_day = 23
         else:
-            depth = 30.0 + (length * 1.0)
+            seq_idx = (next_question_index - 1) % len(days_sequence)
+            target_day = days_sequence[seq_idx]
             
-        # 3. Problem solving
-        problem_solving = min(98.0, accuracy * 0.95 + (10 if "trade-off" in ans_lower or "depend" in ans_lower or "however" in ans_lower else 0))
+        d_obj = {"day": target_day, "title": f"Day {target_day}", "objectives": ["Understand concepts"], "tools": []}
+        if curriculum and "days" in curriculum:
+            d_obj = next((d for d in curriculum["days"] if d["day"] == target_day), d_obj)
+            
+        is_followup = next_question_index in [2, 4]
         
-        # 4. Communication
-        communication = min(98.0, 60.0 + min(35.0, length / 4.0))
-        if "e.g." in ans_lower or "example" in ans_lower or "firstly" in ans_lower or "secondly" in ans_lower:
-            communication = min(98.0, communication + 5.0)
+        history_str = ""
+        for turn in history:
+            history_str += f"Q: {turn['question']['content']}\nA: {turn['answer']['content']}\n"
+            if 'evaluation' in turn:
+                history_str += f"Accuracy Score: {turn['evaluation'].get('accuracy_score', 0)}/100, Feedback: {turn['evaluation'].get('feedback', '')}\n"
+            history_str += "\n"
+            
+        prompt = f"""You are the Question Generator agent in an AI Interview platform.
+Candidate Profile:
+{json.dumps(candidate_profile, indent=2)}
 
-        # Cap scores between 0 and 100
-        accuracy = max(10.0, min(100.0, accuracy))
-        depth = max(10.0, min(100.0, depth))
-        problem_solving = max(10.0, min(100.0, problem_solving))
-        communication = max(10.0, min(100.0, communication))
-        
-        # Feedback generation
-        weak_points = []
-        strong_points = []
-        
-        if accuracy > 85:
-            strong_points.append(f"Demonstrated excellent command over {question_topic} concepts.")
-        elif accuracy > 70:
-            strong_points.append(f"Solid basic understanding of {question_topic} metrics.")
-        else:
-            weak_points.append(f"Needs clarification on fundamental mechanisms of {question_topic}.")
-            
-        if depth > 85:
-            strong_points.append("Detail-oriented answer covering edge cases and tradeoffs.")
-        elif depth < 50:
-            weak_points.append("Answer is too brief. Try to explain the internal operations or provide practical examples.")
-            
-        if "trade-off" not in ans_lower and "cost" not in ans_lower and question_topic.lower() in ["vector", "pinecone vs qdrant", "scaling", "quality"]:
-            weak_points.append("Missing architectural trade-off comparisons (e.g. latency vs accuracy, memory vs cost).")
-            
-        if matched_keys:
-            strong_points.append(f"Appropriately referenced terms like {', '.join(matched_keys[:3])}.")
-        else:
-            weak_points.append("Lacked key industry terms associated with this technology.")
+Focus Topics: {', '.join(focus_topics) if focus_topics else 'General curriculum sequence'}
 
-        if not weak_points:
-            weak_points = ["No major weak areas identified in this answer."]
-            
-        # Create feedback string
-        if accuracy > 80:
-            feedback = f"Great response! You correctly identified the core components of {question_topic}. Your explanation shows a strong understanding of how to implement and optimize this within an enterprise environment."
-        elif accuracy > 60:
-            feedback = f"Fair answer. You have a decent grasp of {question_topic}, but you could add more detail about specific configuration details, architectural trade-offs, or code practices."
+Interview State:
+Current Question Index: {next_question_index} of {total_questions}
+Target Day: Day {target_day} - {d_obj.get('title')}
+Target Objectives: {', '.join(d_obj.get('objectives', []))}
+Target Tools: {', '.join(d_obj.get('tools', []))}
+
+Conversation History so far:
+{history_str}
+"""
+
+        if is_followup:
+            prompt += f"""Your task:
+Generate a genuine follow-up question probing their previous answer.
+- Assess how they answered. If they did well, ask a deeper architecture/trade-off question. If they struggled, ask a clarifying or foundational question to assess their baseline.
+- Keep the tone highly conversational.
+- Target the same topic (Day {target_day}).
+"""
         else:
-            feedback = f"Your answer is a bit surface-level. To succeed in an enterprise setup, you need to understand how {question_topic} structures data beneath the hood, standard parameters (like index parameters or overlap sizes), and operational constraints."
+            prompt += f"""Your task:
+Generate a new technical question targeting Day {target_day} topic and objectives.
+- Adjust difficulty based on history: if they have high scores (>80 avg), make it challenging. If they are struggling (<60 avg), make it supportive and conceptual.
+- Do NOT repeat questions.
+"""
+
+        prompt += """
+Return a structured JSON output matching the GeneratedQuestionSchema.
+"""
+        try:
+            q_data: GeneratedQuestionSchema = call_gemini_with_retry(
+                client=self.client,
+                model=settings.GEMINI_MODEL,
+                contents=prompt,
+                response_schema=GeneratedQuestionSchema,
+                retries=3
+            )
+            return {
+                "reply": q_data.reply,
+                "topic": q_data.topic,
+                "reason": q_data.reason,
+                "question_type": q_data.question_type
+            }
+        except Exception as e:
+            if self.use_gemini:
+                logger.error(f"Gemini failed generating adaptive question: {e}. Raising exception.")
+                raise RuntimeError(f"Gemini API failure during adaptive question generation: {e}")
+            logger.error(f"Gemini failed generating adaptive question: {e}")
+            return {}
+
+    # ========================================================
+    # ANSWER EVALUATION
+    # ========================================================
+
+    def evaluate_answer_simulation(self, question_content: str, answer_content: str, question_topic: str, candidate_profile: Optional[dict] = None, history: Optional[list] = None) -> Dict[str, Any]:
+        """
+        Evaluates answer using Gemini if available, otherwise falls back to keyword matching.
+        """
+        if not self.use_gemini:
+            # Fallback simulator evaluator (originally written)
+            ans_lower = answer_content.lower()
+            length = len(answer_content.split())
+            matches = []
+            keywords = ["vector", "embedding", "distance", "similarity", "qdrant", "pinecone", "chunk", "prompt", "llm", "memory", "agent", "mcp", "tool"]
+            for kw in keywords:
+                if kw in ans_lower:
+                    matches.append(kw)
+            accuracy = 50.0 + min(40.0, len(matches) * 10.0)
+            depth = 40.0 + min(50.0, length * 1.5)
+            problem_solving = min(98.0, accuracy * 0.9 + 8.0)
+            communication = min(98.0, 50.0 + min(45.0, length * 0.8))
             
-        return {
-            "accuracy_score": round(accuracy, 1),
-            "depth_score": round(depth, 1),
-            "problem_solving_score": round(problem_solving, 1),
-            "communication_score": round(communication, 1),
-            "feedback": feedback,
-            "weak_points": weak_points,
-            "strong_points": strong_points
-        }
+            weak_points = []
+            strong_points = []
+            if len(matches) >= 3:
+                strong_points.append(f"Correctly referenced key terminology: {', '.join(matches[:3])}.")
+            else:
+                weak_points.append("Response lacked details or specific terms related to the curriculum topic.")
+            if length < 15:
+                weak_points.append("Answer is too brief. Elaborate on the architectural considerations or specific tools.")
+            else:
+                strong_points.append("Response provided decent conceptual depth and explanation of concepts.")
+            feedback = f"Your answer scored {round(accuracy, 1)}% in accuracy. To improve, discuss trade-offs in production."
+            return {
+                "accuracy_score": round(accuracy, 1),
+                "depth_score": round(depth, 1),
+                "problem_solving_score": round(problem_solving, 1),
+                "communication_score": round(communication, 1),
+                "feedback": feedback,
+                "weak_points": weak_points if weak_points else ["No major weak areas identified."],
+                "strong_points": strong_points if strong_points else ["Demonstrated general compliance."]
+            }
+
+        # GEMINI CALL
+        profile_str = json.dumps(candidate_profile, indent=2) if candidate_profile else "Not provided"
+        history_str = ""
+        if history:
+            for turn in history:
+                q_text = turn.get("question", {}).get("content", "")
+                a_text = turn.get("answer", {}).get("content", "")
+                history_str += f"Q: {q_text}\nA: {a_text}\n\n"
+                
+        prompt = f"""You are the Answer Evaluator agent in an AI Interview platform.
+Candidate Profile:
+{profile_str}
+
+Context History:
+{history_str}
+
+Grade the candidate's response to the technical question:
+Question: "{question_content}"
+Topic: {question_topic}
+Candidate Answer: "{answer_content}"
+
+Your task:
+Assess their answer and calculate four scores out of 100:
+1. Accuracy: Technical correctness of the concepts.
+2. Depth: Comprehensiveness, including details and trade-offs.
+3. Problem Solving: Rationale and logical soundness.
+4. Communication: Structure and clarity of explanation.
+
+Provide constructive feedback highlighting:
+- Strengths and specific terms correctly referenced.
+- Weak points and specific misconceptions.
+- Targeted recommendations.
+
+Return a structured JSON output matching the EvaluationSchema.
+"""
+        try:
+            ev_data: EvaluationSchema = call_gemini_with_retry(
+                client=self.client,
+                model=settings.GEMINI_MODEL,
+                contents=prompt,
+                response_schema=EvaluationSchema,
+                retries=3
+            )
+            return {
+                "accuracy_score": ev_data.accuracy_score,
+                "depth_score": ev_data.depth_score,
+                "problem_solving_score": ev_data.problem_solving_score,
+                "communication_score": ev_data.communication_score,
+                "feedback": ev_data.feedback,
+                "weak_points": ev_data.weak_points,
+                "strong_points": ev_data.strong_points
+            }
+        except Exception as e:
+            if self.use_gemini:
+                logger.error(f"Gemini answer evaluation failed: {e}. Raising exception.")
+                raise RuntimeError(f"Gemini API failure during evaluation: {e}")
+            logger.error(f"Gemini answer evaluation failed: {e}. Falling back to simulation evaluator.")
+            return self.evaluate_answer_simulation(question_content, answer_content, question_topic)
+
+    # ========================================================
+    # FEEDBACK REPORT GENERATOR
+    # ========================================================
 
     def generate_final_report_simulation(self, history: List[Dict[str, Any]], difficulty: str) -> Dict[str, Any]:
         """
-        Generates a premium final report based on interview history.
+        Generates final report from actual history.
         """
-        if not history:
-            return {}
+        if not self.use_gemini:
+            # Fallback simulator reporter (originally written)
+            if not history:
+                return {}
+            total = len(history)
+            avg_acc = sum(h["evaluation"]["accuracy_score"] for h in history) / total
+            avg_depth = sum(h["evaluation"]["depth_score"] for h in history) / total
+            avg_prob = sum(h["evaluation"]["problem_solving_score"] for h in history) / total
+            avg_comm = sum(h["evaluation"]["communication_score"] for h in history) / total
+            overall = (avg_acc + avg_depth + avg_prob + avg_comm) / 4.0
             
-        total_questions = len(history)
-        avg_accuracy = sum(h["evaluation"]["accuracy_score"] for h in history) / total_questions
-        avg_depth = sum(h["evaluation"]["depth_score"] for h in history) / total_questions
-        avg_problem = sum(h["evaluation"]["problem_solving_score"] for h in history) / total_questions
-        avg_comm = sum(h["evaluation"]["communication_score"] for h in history) / total_questions
-        
-        # Estimate system design based on topics
-        design_scores = [h["evaluation"]["accuracy_score"] for h in history if h["question"]["topic"].lower() in ["system design", "vector databases", "pinecone vs qdrant", "scaling", "model context protocol"]]
-        avg_design = sum(design_scores) / len(design_scores) if design_scores else (avg_accuracy * 0.9)
-        
-        # Estimate overall confidence
-        confidence_scores = [h["evaluation"]["communication_score"] * 0.4 + h["evaluation"]["accuracy_score"] * 0.6 for h in history]
-        avg_confidence = sum(confidence_scores) / total_questions
-        
-        overall = (avg_accuracy + avg_depth + avg_problem + avg_comm + avg_design) / 5.0
-        
-        # Collect all strengths and weaknesses
-        strengths = []
-        weaknesses = []
-        recommendations = []
-        
-        for h in history:
-            topic = h["question"]["topic"]
-            score = h["evaluation"]["accuracy_score"]
-            if score >= 80:
-                strengths.append(f"Strong understanding of {topic} principles ({score}%).")
-            elif score < 65:
-                weaknesses.append(f"Gaps in {topic} implementation details ({score}%).")
-                recommendations.append(f"Re-study curriculum modules covering {topic} definitions.")
-                
-        # Deduplicate
-        strengths = list(set(strengths))[:4]
-        weaknesses = list(set(weaknesses))[:4]
-        recommendations = list(set(recommendations))[:3]
-        
-        # Ensure we have items
-        if not strengths:
-            strengths = ["Consistently solid conceptual baseline across topics."]
-        if not weaknesses:
-            weaknesses = ["No critical knowledge deficiencies. Good baseline performance."]
-        if not recommendations:
-            recommendations = ["Review HNSW construction parameters to optimize search indexing.", "Practice writing custom tool endpoints using the Model Context Protocol."]
+            return {
+                "overall_score": round(overall, 1),
+                "technical_accuracy": round(avg_acc, 1),
+                "communication": round(avg_comm, 1),
+                "depth": round(avg_depth, 1),
+                "problem_solving": round(avg_prob, 1),
+                "system_design": round(overall * 0.9, 1),
+                "candidate_confidence": round(avg_comm * 0.95, 1),
+                "strengths": ["Consistently solid conceptual baseline."],
+                "weaknesses": ["Gaps in implementation detail."],
+                "recommendations": ["Review HNSW construction parameters."],
+                "learning_path": {
+                    "recommended_videos": [
+                        {"title": "Deep Dive into Vector Similarity Search", "duration": "15m", "url": "https://youtube.com/watch?1"},
+                    ],
+                    "recommended_readings": [
+                        {"title": "Introduction to Retrieval-Augmented Generation", "author": "AI Engineering Team", "type": "Article"},
+                    ],
+                    "suggested_practice_problems": [
+                        "Write a Python script to chunk markdown files semantically.",
+                    ]
+                }
+            }
 
-        # Define custom learning path
-        learning_path = {
-            "recommended_videos": [
-                {
-                    "title": "Retrieval-Augmented Generation Deep Dive",
-                    "duration": "18 mins",
-                    "url": "https://youtube.com/watch?example1"
-                },
-                {
-                    "title": "Qdrant Indexing & HNSW Mechanics",
-                    "duration": "24 mins",
-                    "url": "https://youtube.com/watch?example2"
-                }
-            ],
-            "recommended_readings": [
-                {
-                    "title": "Model Context Protocol Specification",
-                    "author": "OpenAI/Anthropic Joint Docs",
-                    "type": "Specification"
-                },
-                {
-                    "title": "Scaling Vector Search to Billions of Points",
-                    "author": "Qdrant Engineering Blog",
-                    "type": "Article"
-                }
-            ],
-            "suggested_practice_problems": [
-                "Implement a Python script to chunk markdown files semantically by tracking header tags.",
-                "Build a local Qdrant collection with scalar quantization enabled and benchmark search latency."
-            ]
-        }
-        
-        return {
-            "overall_score": round(overall, 1),
-            "technical_accuracy": round(avg_accuracy, 1),
-            "communication": round(avg_comm, 1),
-            "depth": round(avg_depth, 1),
-            "problem_solving": round(avg_problem, 1),
-            "system_design": round(avg_design, 1),
-            "candidate_confidence": round(avg_confidence, 1),
-            "strengths": strengths,
-            "weaknesses": weaknesses,
-            "recommendations": recommendations,
-            "learning_path": learning_path
-        }
+        # GEMINI CALL
+        history_str = ""
+        for turn in history:
+            q_text = turn.get("question", {}).get("content", "")
+            ans_text = turn.get("answer", {}).get("content", "") if isinstance(turn.get("answer"), dict) else turn.get("answer", "")
+            eval_data = turn.get("evaluation", {})
+            history_str += f"Q: {q_text}\nA: {ans_text}\n"
+            history_str += f"Scores: Accuracy={eval_data.get('accuracy_score', 0)}%, Depth={eval_data.get('depth_score', 0)}%, Comm={eval_data.get('communication_score', 0)}%\n"
+            history_str += f"Feedback: {eval_data.get('feedback', '')}\n\n"
+            
+        prompt = f"""You are the Report Generator agent. Compile a premium candidate feedback report based on this interview history:
+{history_str}
+
+Target Difficulty: {difficulty}
+
+Your task:
+Compute average overall and skill-specific scores (0 to 100):
+- overall_score
+- technical_accuracy
+- communication
+- depth
+- problem_solving
+- system_design
+- candidate_confidence
+
+Provide lists of strengths, weaknesses, and concrete recommendations.
+Also suggest a personalized learning path with:
+- recommended_videos: [ {{"title": "...", "duration": "...", "url": "..."}} ]
+- recommended_readings: [ {{"title": "...", "author": "...", "type": "..."}} ]
+- suggested_practice_problems: list of strings
+
+Return a structured JSON output matching the FinalReportSchema.
+"""
+        try:
+            report_data: FinalReportSchema = call_gemini_with_retry(
+                client=self.client,
+                model=settings.GEMINI_MODEL,
+                contents=prompt,
+                response_schema=FinalReportSchema,
+                retries=3
+            )
+            return report_data.model_dump()
+        except Exception as e:
+            if self.use_gemini:
+                logger.error(f"Gemini feedback report generation failed: {e}. Raising exception.")
+                raise RuntimeError(f"Gemini API failure during report generation: {e}")
+            logger.error(f"Gemini feedback report generation failed: {e}. Falling back to simulation report.")
+            return self.generate_final_report_simulation(history, difficulty)
+
+
+    # ========================================================
+    # Gemini Unified API Compatibility Stubs
+    # ========================================================
+
+    def generate_question_gemini(
+        self,
+        candidate: dict,
+        history: list,
+        next_day: int,
+        next_day_title: str,
+        next_day_objectives: list,
+        is_followup: bool = False,
+        previous_answer: str = ""
+    ) -> dict:
+        """
+        Unified API endpoint question generator. Passes all context to Gemini.
+        """
+        if not self.use_gemini:
+            # Fallback simple dict matching signature
+            return {
+                "reply": f"Let's move on. Can you explain {next_day_title} and objectives?",
+                "topic": next_day_title,
+                "reason": "Fallback question generator"
+            }
+            
+        history_str = ""
+        for i, turn in enumerate(history):
+            ans_text = turn.get("answer", {}).get("content", "") if isinstance(turn.get("answer"), dict) else turn.get("answer", "")
+            history_str += f"Q: {turn['question']['content']}\nA: {ans_text}\n\n"
+            
+        prompt = f"""You are conducting a realistic, personalized technical interview for the role of {candidate.get('member', {}).get('jobRole', 'AI Engineer')}.
+The candidate's name is {candidate.get('member', {}).get('name', 'Candidate')}.
+Their experience level is {candidate.get('member', {}).get('yearsExperience', 2.0)} years.
+
+Curriculum Context for this turn:
+Day: {next_day}
+Topic: {next_day_title}
+Objectives: {', '.join(next_day_objectives)}
+
+Conversation History so far:
+{history_str}
+"""
+
+        if is_followup:
+            prompt += f"""The previous question was: "{history[-1]['question']['content']}"
+The candidate's previous response was: "{previous_answer}"
+
+Your task:
+Generate a genuine follow-up question probing their previous answer.
+- If the answer was strong, ask a deeper architecture/trade-off question.
+- If it was weak/surface-level, ask a clarification or a foundational question.
+- Keep it highly conversational.
+"""
+        else:
+            prompt += f"""Your task:
+Generate a new technical question targeting the curriculum day's topic and objectives.
+- Match their experience level ({candidate.get('member', {}).get('yearsExperience', 2.0)} years).
+"""
+
+        prompt += """
+Return a structured JSON output matching the GeneratedQuestionSchema.
+"""
+        try:
+            q_data: GeneratedQuestionSchema = call_gemini_with_retry(
+                client=self.client,
+                model=settings.GEMINI_MODEL,
+                contents=prompt,
+                response_schema=GeneratedQuestionSchema,
+                retries=3
+            )
+            return {
+                "reply": q_data.reply,
+                "topic": q_data.topic,
+                "reason": q_data.reason
+            }
+        except Exception as e:
+            logger.error(f"Unified generate_question_gemini failed: {e}")
+            return {
+                "reply": f"Let's move on. Can you explain {next_day_title} and objectives?",
+                "topic": next_day_title,
+                "reason": "Error fallback"
+            }
+
+    def evaluate_answer_gemini(self, question_content: str, answer_content: str, question_topic: str) -> dict:
+        """
+        Unified API endpoint answer evaluator.
+        """
+        return self.evaluate_answer_simulation(question_content, answer_content, question_topic)
+
+    def generate_final_report_gemini(self, history: list, difficulty: str) -> dict:
+        """
+        Unified API endpoint report generator.
+        """
+        return self.generate_final_report_simulation(history, difficulty)
+
 
 agent_engine = AgentEngine()

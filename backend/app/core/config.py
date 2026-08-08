@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     
     # AI Services
     OPENAI_API_KEY: Optional[str] = None
+    GEMINI_API_KEY: Optional[str] = None
+    GEMINI_MODEL: str = "gemini-3.5-flash"
     
     # Vector DB (Qdrant)
     QDRANT_HOST: str = "localhost"

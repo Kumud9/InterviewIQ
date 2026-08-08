@@ -1,10 +1,10 @@
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
 
 export interface TokenResponse {
-  access_token: str;
-  token_type: str;
-  email: str;
-  role: str;
+  access_token: string;
+  token_type: string;
+  email: string;
+  role: string;
   candidate_id?: number;
   candidate_name?: string;
 }

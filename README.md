@@ -81,3 +81,74 @@ To run with real live models:
 1. Edit `backend/.env`
 2. Set `SIMULATOR_MODE=false`
 3. Provide your `OPENAI_API_KEY`
+
+---
+
+## Unified Evaluation API Endpoint
+
+For external verification engines, the platform exposes a single, unified endpoint that maintains state across calls using a `sessionId`.
+
+### Specification
+
+- **Endpoint:** `POST /api/interview`
+- **Authentication:** None required
+
+#### 1. Start Session Payload
+```json
+POST /api/interview
+{
+  "sessionId": "abc-123",
+  "candidate": {
+    "member": {
+      "id": "CAND-001",
+      "name": "Sarah Johnson",
+      "jobRole": "Senior Data Engineer",
+      "yearsExperience": 9,
+      "education": "MS Computer Science",
+      "status": "COMPLETED"
+    },
+    "missions": [
+      { "day": 7, "title": "Embeddings Explained", "passed": true, "attempts": 1 }
+    ],
+    "signals": { "commitDays": 28, "missionsCompleted": 30, "missionsFirstTry": 20 }
+  }
+}
+```
+**Response:**
+```json
+{
+  "reply": "Welcome. Let's begin your interview.",
+  "done": false
+}
+```
+
+#### 2. Chat Turn Payload
+```json
+POST /api/interview
+{
+  "sessionId": "abc-123",
+  "message": "Candidate's response to the active question..."
+}
+```
+**Response (Middle Turns):**
+```json
+{
+  "reply": "Next adaptive question content...",
+  "done": false
+}
+```
+
+**Response (Final Turn):**
+```json
+{
+  "reply": "Interview completed.",
+  "done": true,
+  "feedback": {
+    "summary": "Overall evaluation scoring breakdown...",
+    "strengths": ["Actionable strength points..."],
+    "gaps": ["Identified knowledge gaps..."],
+    "next": ["Recommended learning steps..."]
+  }
+}
+```
+
