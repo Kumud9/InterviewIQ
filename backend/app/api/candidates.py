@@ -10,11 +10,10 @@ router = APIRouter()
 
 @router.get("", response_model=List[schemas.CandidateResponse])
 def get_candidates(
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(deps.get_current_admin)
+    db: Session = Depends(get_db)
 ) -> Any:
     """
-    Get all candidates (Admin only).
+    Get all candidates (No authentication required).
     """
     candidates = db.query(models.Candidate).all()
     
@@ -58,21 +57,14 @@ def get_my_candidate_profile(
 @router.get("/{candidate_id}", response_model=schemas.CandidateResponse)
 def get_candidate_by_id(
     candidate_id: int,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(deps.get_current_active_user)
+    db: Session = Depends(get_db)
 ) -> Any:
     """
-    Get candidate profile by id (Admins, or Candidate requesting their own details).
+    Get candidate profile by id (No authentication required).
     """
     cand = db.query(models.Candidate).filter(models.Candidate.id == candidate_id).first()
     if not cand:
         raise HTTPException(status_code=404, detail="Candidate not found")
-        
-    # Check permissions
-    if current_user.role != "admin":
-        my_cand = db.query(models.Candidate).filter(models.Candidate.user_id == current_user.id).first()
-        if not my_cand or my_cand.id != candidate_id:
-            raise HTTPException(status_code=403, detail="Not authorized to view this profile.")
             
     skills_list = json.loads(cand.skills) if isinstance(cand.skills, str) else cand.skills
     journey_list = json.loads(cand.learning_journey) if isinstance(cand.learning_journey, str) else cand.learning_journey

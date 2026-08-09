@@ -21,19 +21,14 @@ export default function DashboardLayout({
   const [userRole, setUserRole] = useState("candidate");
 
   useEffect(() => {
-    // Read cached login credentials
-    const token = api.getToken();
-    if (!token) {
-      router.push("/login");
-      return;
-    }
-    const name = localStorage.getItem("candidate_name");
-    const email = localStorage.getItem("email");
-    const role = localStorage.getItem("role");
+    // Read cached login credentials if available, otherwise fallback to defaults
+    const name = localStorage.getItem("candidate_name") || "Sarah Johnson";
+    const email = localStorage.getItem("email") || "candidate@stripe.com";
+    const role = localStorage.getItem("role") || "candidate";
     
-    if (name) setUserName(name);
-    if (email) setUserEmail(email);
-    if (role) setUserRole(role);
+    setUserName(name);
+    setUserEmail(email);
+    setUserRole(role);
   }, []);
 
   const handleLogout = () => {

@@ -89,8 +89,7 @@ def helper_serialize_interview(interview: models.Interview) -> Dict[str, Any]:
 @router.post("/start")
 def start_interview(
     req: schemas.InterviewStartRequest,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(deps.get_current_active_user)
+    db: Session = Depends(get_db)
 ) -> Any:
     """
     Initialize a new interview session and pre-populate questions list.
@@ -151,8 +150,7 @@ def start_interview(
 @router.post("/answer")
 def submit_answer(
     req: schemas.AnswerSubmitRequest,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(deps.get_current_active_user)
+    db: Session = Depends(get_db)
 ) -> Any:
     """
     Submit an answer to a question. Evaluates answer dynamically and reports next question.
@@ -361,8 +359,7 @@ def submit_answer(
 @router.post("/{interview_id}/end")
 def end_interview_forcefully(
     interview_id: int,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(deps.get_current_active_user)
+    db: Session = Depends(get_db)
 ) -> Any:
     """
     End the interview session early, compile the report based on answered questions.
@@ -442,8 +439,7 @@ def end_interview_forcefully(
 @router.get("/{interview_id}")
 def get_interview_session(
     interview_id: int,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(deps.get_current_active_user)
+    db: Session = Depends(get_db)
 ) -> Any:
     """
     Get full details of a specific interview session.
@@ -561,20 +557,20 @@ def handle_unified_interview_endpoint(
     if current_idx == 0:
         # Target first day in sequence: Day 7
         d_obj = get_curriculum_day_obj(7)
-        if api_key_set:
-            try:
-                q_data = agent_engine.generate_question_gemini(
-                    candidate=candidate,
-                    history=[],
-                    next_day=7,
-                    next_day_title=d_obj["title"],
-                    next_day_objectives=d_obj["objectives"],
-                    is_followup=False
-                )
-                reply_text = q_data["reply"]
-                topic_name = q_data["topic"]
-                source_meta = "gemini"
-            except Exception as e:
+        try:
+            q_data = agent_engine.generate_question_gemini(
+                candidate=candidate,
+                history=[],
+                next_day=7,
+                next_day_title=d_obj["title"],
+                next_day_objectives=d_obj["objectives"],
+                is_followup=False
+            )
+            reply_text = q_data["reply"]
+            topic_name = q_data["topic"]
+            source_meta = "gemini" if agent_engine.use_gemini else "simulator"
+        except Exception as e:
+            if agent_engine.use_gemini:
                 logger.error(f"Gemini failed to generate Q1: {e}")
                 return {
                     "reply": f"Error: Gemini question generation failed: {str(e)}",
@@ -583,14 +579,10 @@ def handle_unified_interview_endpoint(
                     "source": "gemini",
                     "retryable": True
                 }
-        else:
-            return {
-                "reply": "Error: GEMINI_API_KEY is not configured.",
-                "done": False,
-                "status": "generation_error",
-                "source": "gemini",
-                "retryable": False
-            }
+            logger.info("Gemini disabled, falling back to simulator for Q1.")
+            reply_text = f"Let's begin. Can you explain your experience with {d_obj['title']}?"
+            topic_name = d_obj["title"]
+            source_meta = "simulator"
             
         state["active_question"] = {
             "content": reply_text,
@@ -605,20 +597,27 @@ def handle_unified_interview_endpoint(
             "reply": reply_text,
             "done": False,
             "status": "success",
-            "source": "gemini"
+            "source": source_meta
         }
         
     # Process turn response -> Evaluate answer
     active_q = state["active_question"]
     
-    if api_key_set:
-        try:
+    try:
+        if agent_engine.use_gemini:
             evaluation = agent_engine.evaluate_answer_gemini(
                 active_q["content"],
                 user_msg,
                 active_q["topic"]
             )
-        except Exception as e:
+        else:
+            evaluation = agent_engine.evaluate_answer_simulation(
+                active_q["content"],
+                user_msg,
+                active_q["topic"]
+            )
+    except Exception as e:
+        if agent_engine.use_gemini:
             logger.error(f"Gemini answer evaluation failed: {e}")
             return {
                 "reply": f"Error: Gemini answer evaluation failed: {str(e)}",
@@ -627,14 +626,12 @@ def handle_unified_interview_endpoint(
                 "source": "gemini",
                 "retryable": True
             }
-    else:
-        return {
-            "reply": "Error: GEMINI_API_KEY is not configured.",
-            "done": False,
-            "status": "generation_error",
-            "source": "gemini",
-            "retryable": False
-        }
+        logger.info("Gemini disabled, falling back to simulator for evaluation.")
+        evaluation = agent_engine.evaluate_answer_simulation(
+            active_q["content"],
+            user_msg,
+            active_q["topic"]
+        )
         
     # Build temporary history with the current turn included to pass to next question planner
     temp_history = list(state["history"]) + [{
@@ -670,21 +667,21 @@ def handle_unified_interview_endpoint(
             
         d_obj = get_curriculum_day_obj(target_day)
         
-        if api_key_set:
-            try:
-                q_data = agent_engine.generate_question_gemini(
-                    candidate=candidate,
-                    history=temp_history,
-                    next_day=target_day,
-                    next_day_title=d_obj["title"],
-                    next_day_objectives=d_obj["objectives"],
-                    is_followup=is_next_followup,
-                    previous_answer=user_msg
-                )
-                reply_text = q_data["reply"]
-                topic_name = q_data["topic"]
-                source_meta = "gemini"
-            except Exception as e:
+        try:
+            q_data = agent_engine.generate_question_gemini(
+                candidate=candidate,
+                history=temp_history,
+                next_day=target_day,
+                next_day_title=d_obj["title"],
+                next_day_objectives=d_obj["objectives"],
+                is_followup=is_next_followup,
+                previous_answer=user_msg
+            )
+            reply_text = q_data["reply"]
+            topic_name = q_data["topic"]
+            source_meta = "gemini" if agent_engine.use_gemini else "simulator"
+        except Exception as e:
+            if agent_engine.use_gemini:
                 logger.error(f"Gemini next question generation failed: {e}")
                 return {
                     "reply": f"Error: Gemini question generation failed: {str(e)}",
@@ -693,14 +690,10 @@ def handle_unified_interview_endpoint(
                     "source": "gemini",
                     "retryable": True
                 }
-        else:
-            return {
-                "reply": "Error: GEMINI_API_KEY is not configured.",
-                "done": False,
-                "status": "generation_error",
-                "source": "gemini",
-                "retryable": False
-            }
+            logger.info("Gemini disabled, falling back to simulator for next question.")
+            reply_text = f"Let's move on. Can you explain {d_obj['title']} and its objectives?"
+            topic_name = d_obj["title"]
+            source_meta = "simulator"
             
         # Commit both turn evaluation and new question state
         state["history"] = temp_history
@@ -717,17 +710,23 @@ def handle_unified_interview_endpoint(
             "reply": reply_text,
             "done": False,
             "status": "success",
-            "source": "gemini"
+            "source": source_meta
         }
     else:
         # Compile evaluation report after 8 questions completed
-        if api_key_set:
-            try:
+        try:
+            if agent_engine.use_gemini:
                 report = agent_engine.generate_final_report_gemini(
                     temp_history,
                     state["difficulty"]
                 )
-            except Exception as e:
+            else:
+                report = agent_engine.generate_final_report_simulation(
+                    temp_history,
+                    state["difficulty"]
+                )
+        except Exception as e:
+            if agent_engine.use_gemini:
                 logger.error(f"Gemini final report generation failed: {e}")
                 return {
                     "reply": f"Error: Gemini feedback compilation failed: {str(e)}",
@@ -736,14 +735,11 @@ def handle_unified_interview_endpoint(
                     "source": "gemini",
                     "retryable": True
                 }
-        else:
-            return {
-                "reply": "Error: GEMINI_API_KEY is not configured.",
-                "done": False,
-                "status": "generation_error",
-                "source": "gemini",
-                "retryable": False
-            }
+            logger.info("Gemini disabled, falling back to simulator for final report.")
+            report = agent_engine.generate_final_report_simulation(
+                temp_history,
+                state["difficulty"]
+            )
             
         summary_text = (
             f"Interview complete. The candidate demonstrated an overall score of {report.get('overall_score', 0)}%. "

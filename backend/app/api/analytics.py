@@ -10,11 +10,10 @@ router = APIRouter()
 
 @router.get("/org", response_model=schemas.OrgAnalytics)
 def get_organization_analytics(
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(deps.get_current_active_user)
+    db: Session = Depends(get_db)
 ) -> Any:
     """
-    Get organization-wide interview statistics and heatmap configurations.
+    Get organization-wide interview statistics and heatmap configurations (No authentication required).
     """
     # Query database stats
     total_interviews = db.query(models.Interview).count()

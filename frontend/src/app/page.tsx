@@ -130,11 +130,11 @@ export default function LandingPage() {
           </nav>
 
           <div className="hidden md:flex items-center gap-5">
-            <Link href="/login" className="text-xs font-bold uppercase tracking-wider text-[#75665A] hover:text-[#171411] transition duration-200">
+            <Link href="/dashboard" className="text-xs font-bold uppercase tracking-wider text-[#75665A] hover:text-[#171411] transition duration-200">
               Sign In
             </Link>
             <Link 
-              href="/login" 
+              href="/dashboard" 
               className="px-5 py-3 text-xs font-extrabold uppercase tracking-wider rounded-xl bg-[#B85D2F] hover:bg-[#9A4C2A] text-[#F6EBDD] shadow-sm hover:shadow transition duration-200"
             >
               Start Interview
@@ -154,9 +154,9 @@ export default function LandingPage() {
             <a href="#workflow" onClick={() => setMobileMenuOpen(false)}>How It Works</a>
             <a href="#pricing" onClick={() => setMobileMenuOpen(false)}>Plans</a>
             <hr className="border-[#C8B79E]" />
-            <Link href="/login" onClick={() => setMobileMenuOpen(false)}>Sign In</Link>
+            <Link href="/dashboard" onClick={() => setMobileMenuOpen(false)}>Sign In</Link>
             <Link 
-              href="/login" 
+              href="/dashboard" 
               className="py-4 text-center rounded-xl bg-[#B85D2F] text-[#F6EBDD]"
               onClick={() => setMobileMenuOpen(false)}
             >
@@ -186,7 +186,7 @@ export default function LandingPage() {
 
           <div className="flex flex-col sm:flex-row gap-4 pt-2">
             <Link 
-              href="/login"
+              href="/dashboard"
               className="px-8 py-4.5 rounded-xl bg-[#B85D2F] hover:bg-[#9A4C2A] text-[#F6EBDD] font-extrabold uppercase tracking-wider text-xs flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition duration-200"
             >
               Start Interview
@@ -439,7 +439,7 @@ export default function LandingPage() {
                 </div>
 
                 <Link 
-                  href="/login" 
+                  href="/dashboard" 
                   className={`py-3.5 text-center rounded-xl text-xs font-extrabold uppercase tracking-wider transition duration-200 ${
                     plan.popular 
                       ? "bg-[#B85D2F] hover:bg-[#9A4C2A] text-[#F6EBDD] shadow-sm hover:shadow" 

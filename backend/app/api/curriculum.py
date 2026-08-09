@@ -68,11 +68,10 @@ def seed_default_curriculum(db: Session) -> models.Curriculum:
 
 @router.get("", response_model=List[schemas.CurriculumResponse])
 def get_curriculums(
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(deps.get_current_active_user)
+    db: Session = Depends(get_db)
 ) -> Any:
     """
-    Get all curriculums. Automatically seeds a default one if empty.
+    Get all curriculums (No authentication required). Automatically seeds a default one if empty.
     """
     curriculums = db.query(models.Curriculum).all()
     if not curriculums:
